@@ -20,6 +20,7 @@ import * as React from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 
@@ -269,8 +270,22 @@ export class MainView extends React.Component<IProps, IStates> {
 
       controls.enableDamping = true;
       controls.dampingFactor = 0.15;
+      controls.enableZoom = false;
+
+      const zoomControls = new TrackballControls(
+        this._camera,
+        this._renderer.domElement
+      );
+
+      zoomControls.target.set(0,0,0);
+
+      zoomControls.noRotate = true;
+      zoomControls.noPan = false;
+      zoomControls.noZoom = false;
+      zoomControls.zoomSpeed = 1.25;
 
       this._controls = controls;
+      this._zoomControls = zoomControls;
 
       this._controls.addEventListener('change', () => {
         this._updateAnnotation();
@@ -369,6 +384,7 @@ export class MainView extends React.Component<IProps, IStates> {
     }
 
     this._controls.update();
+    this._zoomControls.update();
     this._renderer.setRenderTarget(null);
     this._renderer.clearDepth();
     this._renderer.render(this._scene, this._camera);
@@ -1335,6 +1351,7 @@ export class MainView extends React.Component<IProps, IStates> {
   private _refLength: number | null = null; // Length of bounding box of current object
   private _sceneAxe: THREE.Object3D | null; // Array of  X, Y and Z axe
   private _controls: OrbitControls; // Mouse controls
+  private _zoomControls: TrackballControls; // Zoom controls
   private _transformControls: TransformControls; // Mesh position/rotation controls
   private _pointer3D: IPointer | null = null;
   private _collaboratorPointers: IDict<IPointer>;
