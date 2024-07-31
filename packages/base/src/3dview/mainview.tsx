@@ -266,6 +266,10 @@ export class MainView extends React.Component<IProps, IStates> {
         this._scene.position.y,
         this._scene.position.z
       );
+
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.15;
+
       this._controls = controls;
 
       this._controls.addEventListener('change', () => {
