@@ -415,7 +415,9 @@ export class MainView extends React.Component<IProps, IStates> {
       const initialQuaternion = new THREE.Quaternion();
 
       this._transformControls.addEventListener('mouseDown', () => {
-        if (!this._currentTransformed) {return;}
+        if (!this._currentTransformed) {
+          return;
+        }
       
         // Capture initial quaternion for delta calculation
         this._pivot.getWorldQuaternion(initialQuaternion);
@@ -425,73 +427,57 @@ export class MainView extends React.Component<IProps, IStates> {
         if (!this._currentTransformed) {
           return;
         }
-
+      
         const objectName = this._currentTransformed.name.replace('-group', '');
-
         const updatedPosition = new THREE.Vector3();
         this._pivot.getWorldPosition(updatedPosition);
-
+      
         // Get the global rotation quaternion
         const q = new THREE.Quaternion();
         this._pivot.getWorldQuaternion(q);
-
-        const deltaQuaternion = initialQuaternion.clone().invert().multiply(q);
-
-        let deltaAxis = [0, 0, 1];
-        let deltaAngle = 0;
-        const angle = 2 * Math.acos(deltaQuaternion.w);
-        const sinHalfAngle = Math.sqrt(1 - deltaQuaternion.w * deltaQuaternion.w);
       
-        if (sinHalfAngle > 0.001) {
-          deltaAxis = [
-            parseFloat((deltaQuaternion.x / sinHalfAngle).toFixed(2)),
-            parseFloat((deltaQuaternion.y / sinHalfAngle).toFixed(2)),
-            parseFloat((deltaQuaternion.z / sinHalfAngle).toFixed(2))
-          ];
-          deltaAngle = parseFloat((angle * 57.2958).toFixed(2)); // Convert radians to degrees
-        }
-
-        console.log('Delta Axis:', deltaAxis, 'Delta Angle:', deltaAngle);
+        // Calculate delta quaternion for rotation since the initial state
+        const deltaQuaternion = initialQuaternion.clone().invert().multiply(q);
+      
+        // Extract axis and angle from the delta quaternion
+        const deltaAxis = new THREE.Vector3();
+        const deltaAngle = deltaQuaternion.angleTo(new THREE.Quaternion(1, 0, 0, 0)) * (180 / Math.PI); // Convert to degrees
         
+        if (deltaAngle > 0.001) {
+          deltaAxis.set(deltaQuaternion.x, deltaQuaternion.y, deltaQuaternion.z).normalize();
+        }
+      
+        console.log('Delta Axis:', deltaAxis.toArray(), 'Delta Angle:', deltaAngle);
+      
         const obj = this._model.sharedModel.getObjectByName(objectName);
-
+      
         if (obj && obj.parameters && obj.parameters.Placement) {
           const newPosition = [
             updatedPosition.x,
             updatedPosition.y,
             updatedPosition.z
           ];
-          
-          // const newAxis = [deltaAxis[0]+obj.parameters.Placement.Axis[0], deltaAxis[1]+obj.parameters.Placement.Axis[1], deltaAxis[2]+obj.parameters.Placement.Axis[2]];
-          const initialAxis = obj.parameters.Placement.Axis; // This is a 3x1 vector
-          
-          // Matrix multiplication (1x3 * 3x1 = 3x3)
-          const newAxis = [
-              deltaAxis[0] * initialAxis[0]+ deltaAxis[0] * initialAxis[1]+ deltaAxis[0] * initialAxis[2],
-              deltaAxis[1] * initialAxis[0]+ deltaAxis[1] * initialAxis[1]+ deltaAxis[1] * initialAxis[2],
-              deltaAxis[2] * initialAxis[0]+ deltaAxis[2] * initialAxis[1]+ deltaAxis[2] * initialAxis[2]
-          ];
-          
-          console.log('New Axis Matrix:', newAxis);
-          
-          console.log('New Axis:', newAxis);
-          
-          const initialAngle = obj.parameters.Placement.Angle;
-          let newAngle = deltaAngle + initialAngle;
-          newAngle = newAngle % 360;
-          if (newAngle < 0) {
-              newAngle += 360;
-          }
-          
+      
+          // Apply delta rotation to the initial axis using delta quaternion
+          const initialAxis = new THREE.Vector3(
+            obj.parameters.Placement.Axis[0],
+            obj.parameters.Placement.Axis[1],
+            obj.parameters.Placement.Axis[2]
+          );
+      
+          // Rotate the initial axis by deltaQuaternion
+          const newAxis = initialAxis.clone().applyQuaternion(deltaQuaternion).normalize();
+          const newAngle = (obj.parameters.Placement.Angle + deltaAngle) % 360;
+      
+          console.log('New Axis:', newAxis.toArray());
           console.log('New Angle:', newAngle);
-          
-          
+
           this._mainViewModel.maybeUpdateObjectParameters(objectName, {
             ...obj.parameters,
             Placement: {
               ...obj.parameters.Placement,
               Position: newPosition,
-              Axis: newAxis,
+              Axis: newAxis.toArray(),
               Angle: newAngle
             }
           });
