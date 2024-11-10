@@ -412,6 +412,15 @@ export class MainView extends React.Component<IProps, IStates> {
         this._controls.enabled = !event.value;
       });
       // Update the currently transformed object in the shared model once finished moving
+      const initialQuaternion = new THREE.Quaternion();
+
+      this._transformControls.addEventListener('mouseDown', () => {
+        if (!this._currentTransformed) {return;}
+      
+        // Capture initial quaternion for delta calculation
+        this._pivot.getWorldQuaternion(initialQuaternion);
+      });
+      
       this._transformControls.addEventListener('objectChange', () => {
         if (!this._currentTransformed) {
           return;
@@ -426,21 +435,24 @@ export class MainView extends React.Component<IProps, IStates> {
         const q = new THREE.Quaternion();
         this._pivot.getWorldQuaternion(q);
 
-        let updatedAngle = [[0, 0, 0], 0];
-        if (1 - q.w * q.w > 0.001) {
-          const s = Math.sqrt(1 - q.w * q.w);
-          updatedAngle = [
-            [
-              parseFloat((q.x / s).toFixed(2)),
-              parseFloat((q.y / s).toFixed(2)),
-              parseFloat((q.z / s).toFixed(2))
-            ],
-            parseFloat((2 * Math.acos(q.w) * 57.2958).toFixed(2))
+        const deltaQuaternion = initialQuaternion.clone().invert().multiply(q);
+
+        let deltaAxis = [0, 0, 1];
+        let deltaAngle = 0;
+        const angle = 2 * Math.acos(deltaQuaternion.w);
+        const sinHalfAngle = Math.sqrt(1 - deltaQuaternion.w * deltaQuaternion.w);
+      
+        if (sinHalfAngle > 0.001) {
+          deltaAxis = [
+            parseFloat((deltaQuaternion.x / sinHalfAngle).toFixed(2)),
+            parseFloat((deltaQuaternion.y / sinHalfAngle).toFixed(2)),
+            parseFloat((deltaQuaternion.z / sinHalfAngle).toFixed(2))
           ];
-        } else {
-          updatedAngle = [[0, 0, 1], 0];
+          deltaAngle = parseFloat((angle * 57.2958).toFixed(2)); // Convert radians to degrees
         }
 
+        console.log('Delta Axis:', deltaAxis, 'Delta Angle:', deltaAngle);
+        
         const obj = this._model.sharedModel.getObjectByName(objectName);
 
         if (obj && obj.parameters && obj.parameters.Placement) {
@@ -449,15 +461,38 @@ export class MainView extends React.Component<IProps, IStates> {
             updatedPosition.y,
             updatedPosition.z
           ];
-          const newAxis = updatedAngle[0];
-
+          
+          // const newAxis = [deltaAxis[0]+obj.parameters.Placement.Axis[0], deltaAxis[1]+obj.parameters.Placement.Axis[1], deltaAxis[2]+obj.parameters.Placement.Axis[2]];
+          const initialAxis = obj.parameters.Placement.Axis; // This is a 3x1 vector
+          
+          // Matrix multiplication (1x3 * 3x1 = 3x3)
+          const newAxis = [
+              deltaAxis[0] * initialAxis[0]+ deltaAxis[0] * initialAxis[1]+ deltaAxis[0] * initialAxis[2],
+              deltaAxis[1] * initialAxis[0]+ deltaAxis[1] * initialAxis[1]+ deltaAxis[1] * initialAxis[2],
+              deltaAxis[2] * initialAxis[0]+ deltaAxis[2] * initialAxis[1]+ deltaAxis[2] * initialAxis[2]
+          ];
+          
+          console.log('New Axis Matrix:', newAxis);
+          
+          console.log('New Axis:', newAxis);
+          
+          const initialAngle = obj.parameters.Placement.Angle;
+          let newAngle = deltaAngle + initialAngle;
+          newAngle = newAngle % 360;
+          if (newAngle < 0) {
+              newAngle += 360;
+          }
+          
+          console.log('New Angle:', newAngle);
+          
+          
           this._mainViewModel.maybeUpdateObjectParameters(objectName, {
             ...obj.parameters,
             Placement: {
               ...obj.parameters.Placement,
               Position: newPosition,
               Axis: newAxis,
-              Angle: updatedAngle[1]
+              Angle: newAngle
             }
           });
         }
