@@ -199,9 +199,9 @@ export function buildShape(options: {
   meshGroup.name = `${objName}-group`;
   meshGroup.visible = visible;
 
-  geometry.computeBoundingBox(); // Compute the bounding box before centering
-  const offset = new THREE.Vector3();
-  geometry.boundingBox?.getCenter(offset); // Get the center of the bounding box
+  // geometry.computeBoundingBox(); // Compute the bounding box before centering
+  // const offset = new THREE.Vector3();
+  // geometry.boundingBox?.getCenter(offset); // Get the center of the bounding box
   geometry.center(); 
 
   // We only build the stencil logic for solid meshes
@@ -269,12 +269,9 @@ export function buildShape(options: {
     edgesMeshes.push(edgesMesh);
     meshGroup.add(edgesMesh);
     edgeIdx++;
+
+    edgeGeometry.center();
   }
-  edgesMeshes.forEach((edgesMesh) => {
-    edgesMesh.geometry.boundingBox?.getCenter(offset);
-    edgesMesh.geometry.center();
-    edgesMesh.position.add(offset);
-  });
   
 
   const bbox = new THREE.Box3().setFromObject(mainMesh);
