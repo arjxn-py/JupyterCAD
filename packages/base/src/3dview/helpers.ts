@@ -294,5 +294,8 @@ export function buildShape(options: {
   mainMesh.position.copy(center);
   mainMesh.applyQuaternion(new THREE.Quaternion(0, 0, 0, 1).invert());
 
+  meshGroup.position.copy(center);
+  meshGroup.applyQuaternion(new THREE.Quaternion(0, 0, 0, 1).invert());
+
   return { meshGroup, mainMesh, edgesMeshes };
 }

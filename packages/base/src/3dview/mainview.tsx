@@ -1200,7 +1200,9 @@ export class MainView extends React.Component<IProps, IStates> {
       const matchingChild = this._meshGroup?.children.find(child =>
         child.name.startsWith(selectedMeshName)
       );
-      console.log(this._meshGroup);
+      console.log('mesh', matchingChild);
+      
+      // console.log(this._meshGroup);
       
       if (matchingChild) {
         console.log('poss', matchingChild.position);
