@@ -421,6 +421,25 @@ export class MainView extends React.Component<IProps, IStates> {
         const updatedQuaternion = new THREE.Quaternion();
         updatedObject.getWorldQuaternion(updatedQuaternion);
 
+        const obj = this._model.sharedModel.getObjectByName(objectName);
+
+        const angle = obj?.parameters?.Placement?.Angle;
+        const axis = obj?.parameters?.Placement?.Axis;
+
+        const angleRad = angle / 57.2958;
+
+        const halfAngle = angleRad / 2;
+        const sinHalfAngle = Math.sin(halfAngle);
+
+        const sharedQuaternion = new THREE.Quaternion(
+          axis[0] * sinHalfAngle,
+          axis[1] * sinHalfAngle,
+          axis[2] * sinHalfAngle,
+          Math.cos(halfAngle)
+        );
+
+        updatedQuaternion.multiply(sharedQuaternion);
+
         let updatedAngle = [[0, 0, 0], 0];
         if (1 - updatedQuaternion.w * updatedQuaternion.w > 0.001) {
           const s = Math.sqrt(1 - updatedQuaternion.w * updatedQuaternion.w);
@@ -435,8 +454,6 @@ export class MainView extends React.Component<IProps, IStates> {
         } else {
           updatedAngle = [[0, 0, 1], 0];
         }
-
-        const obj = this._model.sharedModel.getObjectByName(objectName);
 
         if (obj && obj.parameters && obj.parameters.Placement) {
           // const positionArray = obj?.parameters?.Placement?.Position;
@@ -459,6 +476,7 @@ export class MainView extends React.Component<IProps, IStates> {
       });
       this._scene.add(this._transformControls);
       this._transformControls.setMode('translate');
+      this._transformControls.setSpace('local');
       this._transformControls.enabled = false;
       this._transformControls.visible = false;
 
@@ -780,6 +798,21 @@ export class MainView extends React.Component<IProps, IStates> {
       const obj = this._model.sharedModel.getObjectByName(objName);
       const objColor = obj?.parameters?.Color;
       const isWireframe = this.state.wireframe;
+      const objPosition = obj?.parameters?.Placement?.Position;
+      const objAxis = obj?.parameters?.Placement?.Axis;
+      const objAngle = obj?.parameters?.Placement?.Angle;
+
+      const angleRad = objAngle / 57.2958;
+
+      const halfAngle = angleRad / 2;
+      const sinHalfAngle = Math.sin(halfAngle);
+
+      const objQuaternion = new THREE.Quaternion(
+        objAxis[0] * sinHalfAngle,
+        objAxis[1] * sinHalfAngle,
+        objAxis[2] * sinHalfAngle,
+        Math.cos(halfAngle)
+      );
 
       // TODO Have a more generic way to spot non-solid objects
       const isSolid = !(
@@ -792,7 +825,9 @@ export class MainView extends React.Component<IProps, IStates> {
         clippingPlanes: this._clippingPlanes,
         isSolid,
         isWireframe,
-        objColor
+        objColor,
+        objPosition,
+        objQuaternion
       });
 
       if (output) {
@@ -1525,9 +1560,9 @@ export class MainView extends React.Component<IProps, IStates> {
       this._scene.add(this._explodedViewLinesHelperGroup);
     } else {
       // Exploded view is disabled, we reset the initial positions
-      for (const mesh of this._meshGroup?.children as BasicMesh[]) {
-        mesh.position.set(0, 0, 0);
-      }
+      // for (const mesh of this._meshGroup?.children as BasicMesh[]) {
+      //   mesh.position.set(0, 0, 0);
+      // }
       this._explodedViewLinesHelperGroup?.removeFromParent();
     }
   }

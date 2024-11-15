@@ -123,12 +123,14 @@ export function buildShape(options: {
   isSolid: boolean;
   isWireframe: boolean;
   objColor?: THREE.Color | string | number;
+  objPosition?: THREE.Vector3;
+  objQuaternion?: THREE.Quaternion;
 }): {
   meshGroup: THREE.Group;
   mainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
   edgesMeshes: LineSegments2[];
 } | null {
-  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor } =
+  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor, objPosition } =
     options;
   const { faceList, edgeList, jcObject } = data;
 
@@ -197,14 +199,10 @@ export function buildShape(options: {
   meshGroup.name = `${objName}-group`;
   meshGroup.visible = visible;
 
-  const center = new THREE.Vector3();
-  geometry.boundingBox?.getCenter(center);
-  geometry.center();
-  console.log('center', center);
-
-  if (vertices.length > 0) {
-    geometry.computeBoundsTree();
-  }
+  geometry.computeBoundingBox(); // Compute the bounding box before centering
+  const offset = new THREE.Vector3();
+  geometry.boundingBox?.getCenter(offset); // Get the center of the bounding box
+  geometry.center(); 
 
   // We only build the stencil logic for solid meshes
   if (isSolid) {
@@ -272,12 +270,18 @@ export function buildShape(options: {
     meshGroup.add(edgesMesh);
     edgeIdx++;
   }
+  edgesMeshes.forEach((edgesMesh) => {
+    edgesMesh.geometry.boundingBox?.getCenter(offset);
+    edgesMesh.geometry.center();
+    edgesMesh.position.add(offset);
+  });
+  
 
   const bbox = new THREE.Box3().setFromObject(mainMesh);
   const size = new THREE.Vector3();
   bbox.getSize(size);
-  // const center = new THREE.Vector3();
-  // bbox.getCenter(center);
+  const center = new THREE.Vector3();
+  bbox.getCenter(center);
 
   const boundingBox = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(size.x, size.y, size.z)),
@@ -289,13 +293,17 @@ export function buildShape(options: {
   meshGroup.add(boundingBox);
 
   meshGroup.add(mainMesh);
-  console.log('center', center);
-
-  mainMesh.position.copy(center);
-  mainMesh.applyQuaternion(new THREE.Quaternion(0, 0, 0, 1).invert());
-
-  meshGroup.position.copy(center);
-  meshGroup.applyQuaternion(new THREE.Quaternion(0, 0, 0, 1).invert());
+  if(objPosition){
+    meshGroup.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]));
+    // mainMesh.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]));
+    // meshGroup.children.forEach((child) => {
+    //   child.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]));
+    // });
+    // edgesMeshes.forEach((edgesMesh) => {
+    //   edgesMesh.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2])); // Set their position to objPosition
+    // });
+  }
+  console.log(objPosition);
 
   return { meshGroup, mainMesh, edgesMeshes };
 }
