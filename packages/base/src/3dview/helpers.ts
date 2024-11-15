@@ -143,6 +143,12 @@ export function buildShape(options: {
     // Copy Vertices into three.js Vector3 List
     const vertexCoorLength = face.vertexCoord.length;
     for (let ii = 0; ii < vertexCoorLength; ii++) {
+      const vertex = new THREE.Vector3(
+        face.vertexCoord[0],
+        face.vertexCoord[1],
+        face.vertexCoord[2]
+      );
+      vertex.applyQuaternion(new THREE.Quaternion(0, 0, 0, 1));
       vertices.push(face.vertexCoord[ii]);
     }
     // Sort Triangles into a three.js Face List
@@ -190,6 +196,15 @@ export function buildShape(options: {
   const meshGroup = new THREE.Group();
   meshGroup.name = `${objName}-group`;
   meshGroup.visible = visible;
+
+  const center = new THREE.Vector3();
+  geometry.boundingBox?.getCenter(center);
+  geometry.center();
+  console.log('center', center);
+
+  if (vertices.length > 0) {
+    geometry.computeBoundsTree();
+  }
 
   // We only build the stencil logic for solid meshes
   if (isSolid) {
@@ -261,8 +276,8 @@ export function buildShape(options: {
   const bbox = new THREE.Box3().setFromObject(mainMesh);
   const size = new THREE.Vector3();
   bbox.getSize(size);
-  const center = new THREE.Vector3();
-  bbox.getCenter(center);
+  // const center = new THREE.Vector3();
+  // bbox.getCenter(center);
 
   const boundingBox = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(size.x, size.y, size.z)),
@@ -274,6 +289,10 @@ export function buildShape(options: {
   meshGroup.add(boundingBox);
 
   meshGroup.add(mainMesh);
+  console.log('center', center);
+
+  mainMesh.position.copy(center);
+  mainMesh.applyQuaternion(new THREE.Quaternion(0, 0, 0, 1).invert());
 
   return { meshGroup, mainMesh, edgesMeshes };
 }

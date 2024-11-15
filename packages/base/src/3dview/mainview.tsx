@@ -418,22 +418,41 @@ export class MainView extends React.Component<IProps, IStates> {
 
         const updatedPosition = new THREE.Vector3();
         updatedObject.getWorldPosition(updatedPosition);
+        const updatedQuaternion = new THREE.Quaternion();
+        updatedObject.getWorldQuaternion(updatedQuaternion);
+
+        let updatedAngle = [[0, 0, 0], 0];
+        if (1 - updatedQuaternion.w * updatedQuaternion.w > 0.001) {
+          const s = Math.sqrt(1 - updatedQuaternion.w * updatedQuaternion.w);
+          updatedAngle = [
+            [
+              parseFloat((updatedQuaternion.x / s).toFixed(2)),
+              parseFloat((updatedQuaternion.y / s).toFixed(2)),
+              parseFloat((updatedQuaternion.z / s).toFixed(2))
+            ],
+            parseFloat((2 * Math.acos(updatedQuaternion.w) * 57.2958).toFixed(2))
+          ];
+        } else {
+          updatedAngle = [[0, 0, 1], 0];
+        }
 
         const obj = this._model.sharedModel.getObjectByName(objectName);
 
         if (obj && obj.parameters && obj.parameters.Placement) {
-          const positionArray = obj?.parameters?.Placement?.Position;
+          // const positionArray = obj?.parameters?.Placement?.Position;
           const newPosition = [
-            positionArray[0] + updatedPosition.x,
-            positionArray[1] + updatedPosition.y,
-            positionArray[2] + updatedPosition.z
+            updatedPosition.x,
+            updatedPosition.y,
+            updatedPosition.z
           ];
 
           this._mainViewModel.maybeUpdateObjectParameters(objectName, {
             ...obj.parameters,
             Placement: {
               ...obj.parameters.Placement,
-              Position: newPosition
+              Position: newPosition,
+              Axis: updatedAngle[0],
+              Angle: updatedAngle[1]
             }
           });
         }
@@ -717,18 +736,21 @@ export class MainView extends React.Component<IProps, IStates> {
 
   private _onKeyDown(event: KeyboardEvent) {
     // TODO Make these Lumino commands? Or not?
-    if (this._clipSettings.enabled) {
-      switch (event.key) {
-        case 'r':
-          event.preventDefault();
-          event.stopPropagation();
+    if (this._clipSettings.enabled || this._transformControls.enabled) {
+      const toggleMode = (control: any) => {
+        control.setMode(control.mode === 'rotate' ? 'translate' : 'rotate');
+      };
 
-          if (this._clipPlaneTransformControls.mode === 'rotate') {
-            this._clipPlaneTransformControls.setMode('translate');
-          } else {
-            this._clipPlaneTransformControls.setMode('rotate');
-          }
-          break;
+      if (event.key === 'r' && this._clipSettings.enabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMode(this._clipPlaneTransformControls);
+      }
+
+      if (event.key === 't' && this._transformControls.enabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMode(this._transformControls);
       }
     }
   }
@@ -1150,6 +1172,8 @@ export class MainView extends React.Component<IProps, IStates> {
       } else {
         // Highlight non-edges using a bounding box
         this._selectedMeshes.push(selectedMesh);
+        console.log('jis', selectedMesh.position);
+        
 
         const parentGroup = this._meshGroup?.getObjectByName(
           selectedMesh.name
@@ -1176,8 +1200,11 @@ export class MainView extends React.Component<IProps, IStates> {
       const matchingChild = this._meshGroup?.children.find(child =>
         child.name.startsWith(selectedMeshName)
       );
-
+      console.log(this._meshGroup);
+      
       if (matchingChild) {
+        console.log('poss', matchingChild.position);
+        
         this._transformControls.attach(matchingChild as BasicMesh);
 
         const obj = this._model.sharedModel.getObjectByName(selectedMeshName);
