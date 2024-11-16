@@ -123,14 +123,14 @@ export function buildShape(options: {
   isSolid: boolean;
   isWireframe: boolean;
   objColor?: THREE.Color | string | number;
-  objPosition?: THREE.Vector3;
+  objVector?: THREE.Vector3;
   objQuaternion?: THREE.Quaternion;
 }): {
   meshGroup: THREE.Group;
   mainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
   edgesMeshes: LineSegments2[];
 } | null {
-  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor, objPosition } =
+  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor, objVector } =
     options;
   const { faceList, edgeList, jcObject } = data;
 
@@ -290,17 +290,10 @@ export function buildShape(options: {
   meshGroup.add(boundingBox);
 
   meshGroup.add(mainMesh);
-  if(objPosition){
-    meshGroup.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]));
-    // mainMesh.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]));
-    // meshGroup.children.forEach((child) => {
-    //   child.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]));
-    // });
-    // edgesMeshes.forEach((edgesMesh) => {
-    //   edgesMesh.position.copy(new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2])); // Set their position to objPosition
-    // });
+  if(objVector){
+    meshGroup.position.copy(objVector);
   }
-  console.log(objPosition);
+  console.log(objVector);
 
   return { meshGroup, mainMesh, edgesMeshes };
 }

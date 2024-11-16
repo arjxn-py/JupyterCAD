@@ -807,6 +807,7 @@ export class MainView extends React.Component<IProps, IStates> {
       const halfAngle = angleRad / 2;
       const sinHalfAngle = Math.sin(halfAngle);
 
+      const objVector = new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]);
       const objQuaternion = new THREE.Quaternion(
         objAxis[0] * sinHalfAngle,
         objAxis[1] * sinHalfAngle,
@@ -826,7 +827,7 @@ export class MainView extends React.Component<IProps, IStates> {
         isSolid,
         isWireframe,
         objColor,
-        objPosition,
+        objVector,
         objQuaternion
       });
 
