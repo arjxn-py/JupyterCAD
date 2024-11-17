@@ -258,6 +258,8 @@ export function buildShape(options: {
     });
     const edgeGeometry = new LineGeometry();
     edgeGeometry.setPositions(edge.vertexCoord);
+    if (objVector) {edgeGeometry.translate(-objVector.x, -objVector.y, -objVector.z);
+    }
     const edgesMesh = new LineSegments2(edgeGeometry, edgeMaterial);
     edgesMesh.name = `edge-${objName}-${edgeIdx}`;
     edgesMesh.userData = {
@@ -269,8 +271,6 @@ export function buildShape(options: {
     edgesMeshes.push(edgesMesh);
     meshGroup.add(edgesMesh);
     edgeIdx++;
-
-    edgeGeometry.center();
   }
   
 
@@ -292,6 +292,12 @@ export function buildShape(options: {
   meshGroup.add(mainMesh);
   if(objVector){
     meshGroup.position.copy(objVector);
+    // edgesMeshes.forEach((edgeMesh) => {
+    //   console.log(edgeMesh.position);
+    //   edgeMesh.translateX(-objVector.x);
+    //   edgeMesh.translateY(-objVector.y);
+    //   edgeMesh.translateZ(-objVector.z);
+    // })
   }
   console.log(objVector);
 
