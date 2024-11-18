@@ -130,7 +130,7 @@ export function buildShape(options: {
   mainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
   edgesMeshes: LineSegments2[];
 } | null {
-  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor, objVector } =
+  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor, objVector, objQuaternion } =
     options;
   const { faceList, edgeList, jcObject } = data;
 
@@ -150,7 +150,9 @@ export function buildShape(options: {
         face.vertexCoord[1],
         face.vertexCoord[2]
       );
-      vertex.applyQuaternion(new THREE.Quaternion(0, 0, 0, 1));
+      if (objQuaternion) {
+        vertex.applyQuaternion(objQuaternion);
+      }
       vertices.push(face.vertexCoord[ii]);
     }
     // Sort Triangles into a three.js Face List
@@ -292,6 +294,9 @@ export function buildShape(options: {
   meshGroup.add(mainMesh);
   if(objVector){
     meshGroup.position.copy(objVector);
+    if (objQuaternion) {
+      meshGroup.applyQuaternion(objQuaternion.invert());
+    }
     // edgesMeshes.forEach((edgeMesh) => {
     //   console.log(edgeMesh.position);
     //   edgeMesh.translateX(-objVector.x);
