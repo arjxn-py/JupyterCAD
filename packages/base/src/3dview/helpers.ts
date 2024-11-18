@@ -151,7 +151,7 @@ export function buildShape(options: {
         face.vertexCoord[2]
       );
       if (objQuaternion) {
-        vertex.applyQuaternion(objQuaternion);
+        vertex.applyQuaternion(objQuaternion.invert());
       }
       vertices.push(face.vertexCoord[ii]);
     }
@@ -295,7 +295,7 @@ export function buildShape(options: {
   if(objVector){
     meshGroup.position.copy(objVector);
     if (objQuaternion) {
-      meshGroup.applyQuaternion(objQuaternion.invert());
+      meshGroup.applyQuaternion(objQuaternion);
     }
     // edgesMeshes.forEach((edgeMesh) => {
     //   console.log(edgeMesh.position);
