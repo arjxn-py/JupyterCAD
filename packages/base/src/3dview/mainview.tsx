@@ -412,36 +412,100 @@ export class MainView extends React.Component<IProps, IStates> {
         this._controls.enabled = !event.value;
       });
       // Update the currently transformed object in the shared model once finished moving
-      this._transformControls.addEventListener('mouseUp', () => {
-        const updatedObject = this._selectedMeshes[0];
-        const objectName = updatedObject.name;
+      const initialQuaternion = new THREE.Quaternion();
+
+      this._transformControls.addEventListener('mouseDown', () => {
+        if (!this._currentTransformed) {return;}
+      
+        // Capture initial quaternion for delta calculation
+        this._pivot.getWorldQuaternion(initialQuaternion);
+      });
+      
+      this._transformControls.addEventListener('objectChange', () => {
+        if (!this._currentTransformed) {
+          return;
+        }
+
+        const objectName = this._currentTransformed.name.replace('-group', '');
 
         const updatedPosition = new THREE.Vector3();
-        updatedObject.getWorldPosition(updatedPosition);
+        this._pivot.getWorldPosition(updatedPosition);
 
+        // Get the global rotation quaternion
+        const q = new THREE.Quaternion();
+        this._pivot.getWorldQuaternion(q);
+
+        const deltaQuaternion = initialQuaternion.clone().invert().multiply(q);
+
+        let deltaAxis = [0, 0, 1];
+        let deltaAngle = 0;
+        const angle = 2 * Math.acos(deltaQuaternion.w);
+        const sinHalfAngle = Math.sqrt(1 - deltaQuaternion.w * deltaQuaternion.w);
+      
+        if (sinHalfAngle > 0.001) {
+          deltaAxis = [
+            parseFloat((deltaQuaternion.x / sinHalfAngle).toFixed(2)),
+            parseFloat((deltaQuaternion.y / sinHalfAngle).toFixed(2)),
+            parseFloat((deltaQuaternion.z / sinHalfAngle).toFixed(2))
+          ];
+          deltaAngle = parseFloat((angle * 57.2958).toFixed(2)); // Convert radians to degrees
+        }
+
+        console.log('Delta Axis:', deltaAxis, 'Delta Angle:', deltaAngle);
+        
         const obj = this._model.sharedModel.getObjectByName(objectName);
 
         if (obj && obj.parameters && obj.parameters.Placement) {
-          const positionArray = obj?.parameters?.Placement?.Position;
           const newPosition = [
-            positionArray[0] + updatedPosition.x,
-            positionArray[1] + updatedPosition.y,
-            positionArray[2] + updatedPosition.z
+            updatedPosition.x,
+            updatedPosition.y,
+            updatedPosition.z
           ];
-
+          
+          // const newAxis = [deltaAxis[0]+obj.parameters.Placement.Axis[0], deltaAxis[1]+obj.parameters.Placement.Axis[1], deltaAxis[2]+obj.parameters.Placement.Axis[2]];
+          const initialAxis = obj.parameters.Placement.Axis; // This is a 3x1 vector
+          
+          // Matrix multiplication (1x3 * 3x1 = 3x3)
+          const newAxis = [
+              deltaAxis[0] * initialAxis[0]+ deltaAxis[0] * initialAxis[1]+ deltaAxis[0] * initialAxis[2],
+              deltaAxis[1] * initialAxis[0]+ deltaAxis[1] * initialAxis[1]+ deltaAxis[1] * initialAxis[2],
+              deltaAxis[2] * initialAxis[0]+ deltaAxis[2] * initialAxis[1]+ deltaAxis[2] * initialAxis[2]
+          ];
+          
+          console.log('New Axis Matrix:', newAxis);
+          
+          console.log('New Axis:', newAxis);
+          
+          const initialAngle = obj.parameters.Placement.Angle;
+          let newAngle = deltaAngle + initialAngle;
+          newAngle = newAngle % 360;
+          if (newAngle < 0) {
+              newAngle += 360;
+          }
+          
+          console.log('New Angle:', newAngle);
+          
+          
           this._mainViewModel.maybeUpdateObjectParameters(objectName, {
             ...obj.parameters,
             Placement: {
               ...obj.parameters.Placement,
-              Position: newPosition
+              Position: newPosition,
+              Axis: newAxis,
+              Angle: newAngle
             }
           });
         }
       });
       this._scene.add(this._transformControls);
       this._transformControls.setMode('translate');
+      this._transformControls.setSpace('local');
       this._transformControls.enabled = false;
       this._transformControls.visible = false;
+      const pivotHelper = new THREE.AxesHelper(10);
+      this._scene.add(this._pivot);
+      this._pivot.add(pivotHelper);
+      this._transformControls.attach(this._pivot);
 
       this._createViewHelper();
     }
@@ -717,18 +781,21 @@ export class MainView extends React.Component<IProps, IStates> {
 
   private _onKeyDown(event: KeyboardEvent) {
     // TODO Make these Lumino commands? Or not?
-    if (this._clipSettings.enabled) {
-      switch (event.key) {
-        case 'r':
-          event.preventDefault();
-          event.stopPropagation();
+    if (this._clipSettings.enabled || this._transformControls.enabled) {
+      const toggleMode = (control: any) => {
+        control.setMode(control.mode === 'rotate' ? 'translate' : 'rotate');
+      };
 
-          if (this._clipPlaneTransformControls.mode === 'rotate') {
-            this._clipPlaneTransformControls.setMode('translate');
-          } else {
-            this._clipPlaneTransformControls.setMode('rotate');
-          }
-          break;
+      if (event.key === 'r' && this._clipSettings.enabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMode(this._clipPlaneTransformControls);
+      }
+
+      if (event.key === 't' && this._transformControls.enabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMode(this._transformControls);
       }
     }
   }
@@ -1167,40 +1234,51 @@ export class MainView extends React.Component<IProps, IStates> {
     this._updateTransformControls(selectedNames);
   }
 
+  private _pivot = new THREE.Object3D();
+
   /*
    * Attach the transform controls to the current selection, or detach it
    */
   private _updateTransformControls(selection: string[]) {
     if (selection.length === 1) {
       const selectedMeshName = selection[0];
-      const matchingChild = this._meshGroup?.children.find(child =>
+      this._matchingChild = this._meshGroup?.children.find(child =>
         child.name.startsWith(selectedMeshName)
       );
+      this._currentTransformed = this._matchingChild;
 
-      if (matchingChild) {
-        this._transformControls.attach(matchingChild as BasicMesh);
+      if (this._currentTransformed) {
+        // this._transformControls.attach(this._currentTransformed as BasicMesh);
 
         const obj = this._model.sharedModel.getObjectByName(selectedMeshName);
         const positionArray = obj?.parameters?.Placement?.Position;
+        const angle = obj?.parameters?.Placement?.Angle;
+        const axis = obj?.parameters?.Placement?.Axis;
 
         if (positionArray && positionArray.length === 3) {
-          const positionVector = new THREE.Vector3(
+          const position = new THREE.Vector3(
             positionArray[0],
             positionArray[1],
             positionArray[2]
           );
-          this._transformControls.position.copy(positionVector);
+          const rotation = new THREE.Vector3(axis[0], axis[1], axis[2])
+            .normalize()
+            .multiplyScalar(THREE.MathUtils.degToRad(angle));
+
+          // this._transformControls.position.copy(position);
+          // this._transformControls.rotation.setFromVector3(rotation);
+          this._pivot.rotation.setFromVector3(rotation);
+          this._pivot.position.copy(position);
+
+          this._transformControls.visible = true;
+          this._transformControls.enabled = true;
+          return;
         }
-
-        this._transformControls.visible = true;
-        this._transformControls.enabled = true;
-
-        return;
       }
     }
 
     // Detach TransformControls from the previous selection
-    this._transformControls.detach();
+    // this._transformControls.detach();
 
     this._transformControls.visible = false;
     this._transformControls.enabled = false;
@@ -1556,6 +1634,7 @@ export class MainView extends React.Component<IProps, IStates> {
       this._renderer.localClippingEnabled = true;
       this._clipPlaneTransformControls.enabled = true;
       this._clipPlaneTransformControls.visible = true;
+      this._clipPlaneTransformControls.setSpace('local');
       this._clipPlaneTransformControls.attach(this._clippingPlaneMeshControl);
       this._clipPlaneTransformControls.position.copy(
         new THREE.Vector3(0, 0, 0)
@@ -1697,6 +1776,8 @@ export class MainView extends React.Component<IProps, IStates> {
 
   private _previousSelection: { [key: string]: ISelection } | null = null;
 
+  private _currentTransformed: THREE.Object3D | undefined = undefined;
+
   private _scene: THREE.Scene; // Threejs scene
   private _camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; // Threejs camera
   private _cameraLight: THREE.PointLight;
@@ -1721,4 +1802,5 @@ export class MainView extends React.Component<IProps, IStates> {
   private _collaboratorPointers: IDict<IPointer>;
   private _contextMenu: ContextMenu;
   private _loadingTimeout: ReturnType<typeof setTimeout> | null;
+  private _matchingChild: THREE.Object3D<THREE.Object3DEventMap> | undefined;
 }
