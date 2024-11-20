@@ -422,28 +422,65 @@ export class MainView extends React.Component<IProps, IStates> {
 
         const updatedPosition = new THREE.Vector3();
         updatedObject.getWorldPosition(updatedPosition);
+        const updatedQuaternion = new THREE.Quaternion();
+        updatedObject.getWorldQuaternion(updatedQuaternion);
 
         const obj = this._model.sharedModel.getObjectByName(objectName);
 
+        const angle = obj?.parameters?.Placement?.Angle;
+        const axis = obj?.parameters?.Placement?.Axis;
+
+        const angleRad = angle / 57.2958;
+
+        const halfAngle = angleRad / 2;
+        const sinHalfAngle = Math.sin(halfAngle);
+
+        const sharedQuaternion = new THREE.Quaternion(
+          axis[0] * sinHalfAngle,
+          axis[1] * sinHalfAngle,
+          axis[2] * sinHalfAngle,
+          Math.cos(halfAngle)
+        );
+
+        updatedQuaternion.multiply(sharedQuaternion);
+
+        let updatedAngle = [[0, 0, 0], 0];
+        if (1 - updatedQuaternion.w * updatedQuaternion.w > 0.001) {
+          const s = Math.sqrt(1 - updatedQuaternion.w * updatedQuaternion.w);
+          updatedAngle = [
+            [
+              parseFloat((updatedQuaternion.x / s).toFixed(2)),
+              parseFloat((updatedQuaternion.y / s).toFixed(2)),
+              parseFloat((updatedQuaternion.z / s).toFixed(2))
+            ],
+            parseFloat((2 * Math.acos(updatedQuaternion.w) * 57.2958).toFixed(2))
+          ];
+        } else {
+          updatedAngle = [[0, 0, 1], 0];
+        }
+
         if (obj && obj.parameters && obj.parameters.Placement) {
-          const positionArray = obj?.parameters?.Placement?.Position;
+          // const positionArray = obj?.parameters?.Placement?.Position;
           const newPosition = [
-            positionArray[0] + updatedPosition.x,
-            positionArray[1] + updatedPosition.y,
-            positionArray[2] + updatedPosition.z
+            updatedPosition.x,
+            updatedPosition.y,
+            updatedPosition.z
           ];
 
           this._mainViewModel.maybeUpdateObjectParameters(objectName, {
             ...obj.parameters,
             Placement: {
               ...obj.parameters.Placement,
-              Position: newPosition
+              Position: newPosition,
+              Axis: updatedAngle[0],
+              Angle: updatedAngle[1]
             }
           });
         }
       });
       this._scene.add(this._transformControls);
       this._transformControls.setMode('translate');
+      this._transformControls.setSpace('local');
       this._transformControls.enabled = false;
       this._transformControls.visible = false;
 
@@ -723,18 +760,21 @@ export class MainView extends React.Component<IProps, IStates> {
 
   private _onKeyDown(event: KeyboardEvent) {
     // TODO Make these Lumino commands? Or not?
-    if (this._clipSettings.enabled) {
-      switch (event.key) {
-        case 'r':
-          event.preventDefault();
-          event.stopPropagation();
+    if (this._clipSettings.enabled || this._transformControls.enabled) {
+      const toggleMode = (control: any) => {
+        control.setMode(control.mode === 'rotate' ? 'translate' : 'rotate');
+      };
 
-          if (this._clipPlaneTransformControls.mode === 'rotate') {
-            this._clipPlaneTransformControls.setMode('translate');
-          } else {
-            this._clipPlaneTransformControls.setMode('rotate');
-          }
-          break;
+      if (event.key === 'r' && this._clipSettings.enabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMode(this._clipPlaneTransformControls);
+      }
+
+      if (event.key === 't' && this._transformControls.enabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMode(this._transformControls);
       }
     }
   }
@@ -764,6 +804,22 @@ export class MainView extends React.Component<IProps, IStates> {
       const obj = this._model.sharedModel.getObjectByName(objName);
       const objColor = obj?.parameters?.Color;
       const isWireframe = this.state.wireframe;
+      const objPosition = obj?.parameters?.Placement?.Position;
+      const objAxis = obj?.parameters?.Placement?.Axis;
+      const objAngle = obj?.parameters?.Placement?.Angle;
+
+      const angleRad = objAngle / 57.2958;
+
+      const halfAngle = angleRad / 2;
+      const sinHalfAngle = Math.sin(halfAngle);
+
+      const objVector = new THREE.Vector3(objPosition[0], objPosition[1], objPosition[2]);
+      const objQuaternion = new THREE.Quaternion(
+        objAxis[0] * sinHalfAngle,
+        objAxis[1] * sinHalfAngle,
+        objAxis[2] * sinHalfAngle,
+        Math.cos(halfAngle)
+      );
 
       // TODO Have a more generic way to spot non-solid objects
       const isSolid = !(
@@ -776,7 +832,9 @@ export class MainView extends React.Component<IProps, IStates> {
         clippingPlanes: this._clippingPlanes,
         isSolid,
         isWireframe,
-        objColor
+        objColor,
+        objVector,
+        objQuaternion
       });
 
       if (output) {
@@ -1156,6 +1214,8 @@ export class MainView extends React.Component<IProps, IStates> {
       } else {
         // Highlight non-edges using a bounding box
         this._selectedMeshes.push(selectedMesh);
+        console.log('jis', selectedMesh.position);
+        
 
         const parentGroup = this._meshGroup?.getObjectByName(
           selectedMesh.name
@@ -1182,21 +1242,26 @@ export class MainView extends React.Component<IProps, IStates> {
       const matchingChild = this._meshGroup?.children.find(child =>
         child.name.startsWith(selectedMeshName)
       );
-
+      console.log('mesh', matchingChild);
+      
+      // console.log(this._meshGroup);
+      
       if (matchingChild) {
+        console.log('poss', matchingChild.position);
+        
         this._transformControls.attach(matchingChild as BasicMesh);
 
-        const obj = this._model.sharedModel.getObjectByName(selectedMeshName);
-        const positionArray = obj?.parameters?.Placement?.Position;
+        // const obj = this._model.sharedModel.getObjectByName(selectedMeshName);
+        // const positionArray = obj?.parameters?.Placement?.Position;
 
-        if (positionArray && positionArray.length === 3) {
-          const positionVector = new THREE.Vector3(
-            positionArray[0],
-            positionArray[1],
-            positionArray[2]
-          );
-          this._transformControls.position.copy(positionVector);
-        }
+        // if (positionArray && positionArray.length === 3) {
+        //   const positionVector = new THREE.Vector3(
+        //     positionArray[0],
+        //     positionArray[1],
+        //     positionArray[2]
+        //   );
+        //   this._transformControls.position.copy(positionVector);
+        // }
 
         this._transformControls.visible = this.state.transform;
         this._transformControls.enabled = this.state.transform;
@@ -1519,9 +1584,9 @@ export class MainView extends React.Component<IProps, IStates> {
       this._scene.add(this._explodedViewLinesHelperGroup);
     } else {
       // Exploded view is disabled, we reset the initial positions
-      for (const mesh of this._meshGroup?.children as BasicMesh[]) {
-        mesh.position.set(0, 0, 0);
-      }
+      // for (const mesh of this._meshGroup?.children as BasicMesh[]) {
+      //   mesh.position.set(0, 0, 0);
+      // }
       this._explodedViewLinesHelperGroup?.removeFromParent();
     }
   }

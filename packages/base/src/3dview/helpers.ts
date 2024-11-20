@@ -123,12 +123,14 @@ export function buildShape(options: {
   isSolid: boolean;
   isWireframe: boolean;
   objColor?: THREE.Color | string | number;
+  objVector?: THREE.Vector3;
+  objQuaternion?: THREE.Quaternion;
 }): {
   meshGroup: THREE.Group;
   mainMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
   edgesMeshes: LineSegments2[];
 } | null {
-  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor } =
+  const { objName, data, isSolid, isWireframe, clippingPlanes, objColor, objVector, objQuaternion } =
     options;
   const { faceList, edgeList, jcObject } = data;
 
@@ -143,6 +145,14 @@ export function buildShape(options: {
     // Copy Vertices into three.js Vector3 List
     const vertexCoorLength = face.vertexCoord.length;
     for (let ii = 0; ii < vertexCoorLength; ii++) {
+      const vertex = new THREE.Vector3(
+        face.vertexCoord[0],
+        face.vertexCoord[1],
+        face.vertexCoord[2]
+      );
+      if (objQuaternion) {
+        vertex.applyQuaternion(objQuaternion.invert());
+      }
       vertices.push(face.vertexCoord[ii]);
     }
     // Sort Triangles into a three.js Face List
@@ -190,6 +200,11 @@ export function buildShape(options: {
   const meshGroup = new THREE.Group();
   meshGroup.name = `${objName}-group`;
   meshGroup.visible = visible;
+
+  // geometry.computeBoundingBox(); // Compute the bounding box before centering
+  // const offset = new THREE.Vector3();
+  // geometry.boundingBox?.getCenter(offset); // Get the center of the bounding box
+  geometry.center(); 
 
   // We only build the stencil logic for solid meshes
   if (isSolid) {
@@ -245,6 +260,8 @@ export function buildShape(options: {
     });
     const edgeGeometry = new LineGeometry();
     edgeGeometry.setPositions(edge.vertexCoord);
+    if (objVector) {edgeGeometry.translate(-objVector.x, -objVector.y, -objVector.z);
+    }
     const edgesMesh = new LineSegments2(edgeGeometry, edgeMaterial);
     edgesMesh.name = `edge-${objName}-${edgeIdx}`;
     edgesMesh.userData = {
@@ -257,6 +274,7 @@ export function buildShape(options: {
     meshGroup.add(edgesMesh);
     edgeIdx++;
   }
+  
 
   const bbox = new THREE.Box3().setFromObject(mainMesh);
   const size = new THREE.Vector3();
@@ -274,6 +292,19 @@ export function buildShape(options: {
   meshGroup.add(boundingBox);
 
   meshGroup.add(mainMesh);
+  if(objVector){
+    meshGroup.position.copy(objVector);
+    if (objQuaternion) {
+      meshGroup.applyQuaternion(objQuaternion);
+    }
+    // edgesMeshes.forEach((edgeMesh) => {
+    //   console.log(edgeMesh.position);
+    //   edgeMesh.translateX(-objVector.x);
+    //   edgeMesh.translateY(-objVector.y);
+    //   edgeMesh.translateZ(-objVector.z);
+    // })
+  }
+  console.log(objVector);
 
   return { meshGroup, mainMesh, edgesMeshes };
 }
