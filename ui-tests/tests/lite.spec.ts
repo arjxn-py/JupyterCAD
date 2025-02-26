@@ -78,6 +78,8 @@ test.describe('UI Test', () => {
       }
     );
 
+    await page.waitForTimeout(10000);
+
     expect(await jcadWidget.screenshot()).toMatchSnapshot({
       name: 'Render-notebook.png',
       maxDiffPixelRatio: 0.01
