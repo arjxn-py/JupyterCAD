@@ -1567,8 +1567,7 @@ export class MainView extends React.Component<IProps, IStates> {
       for (const objData of objects) {
         const objName = objData.name;
         const obj = this._meshGroup?.getObjectByName(objName) as
-          | BasicMesh
-          | undefined;
+          BasicMesh | undefined;
 
         if (!obj) {
           continue;
@@ -2233,8 +2232,6 @@ export class MainView extends React.Component<IProps, IStates> {
   private _slideInit = false;
   private _sceneL: THREE.Scene | undefined = undefined;
   private _cameraL:
-    | THREE.PerspectiveCamera
-    | THREE.OrthographicCamera
-    | undefined = undefined; // Threejs camera
+    THREE.PerspectiveCamera | THREE.OrthographicCamera | undefined = undefined; // Threejs camera
   private _keyDownHandler: (event: KeyboardEvent) => void;
 }
