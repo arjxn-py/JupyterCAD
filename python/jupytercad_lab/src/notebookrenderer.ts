@@ -49,6 +49,16 @@ export interface ICommMetadata {
 
 export class YJupyterCADModel extends JupyterYModel {
   jupyterCADModel: JupyterCadModel;
+
+  dispose(): void {
+    if (this.isDisposed) {
+      return;
+    }
+    // Dispose the underlying collaborative model so its RTC provider is torn
+    // down.
+    this.jupyterCADModel?.dispose();
+    super.dispose();
+  }
 }
 
 export class YJupyterCADLuminoWidget extends Panel {
