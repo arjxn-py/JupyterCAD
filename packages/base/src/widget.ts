@@ -26,8 +26,7 @@ import { MessageLoop } from '@lumino/messaging';
 const CELL_OUTPUT_WIDGET_CLASS = 'jcad-cell-output-widget';
 
 export type JupyterCadWidget =
-  | JupyterCadDocumentWidget
-  | JupyterCadOutputWidget;
+  JupyterCadDocumentWidget | JupyterCadOutputWidget;
 export class JupyterCadDocumentWidget
   extends DocumentWidget<JupyterCadPanel, IJupyterCadModel>
   implements IJupyterCadDocumentWidget

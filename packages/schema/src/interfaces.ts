@@ -308,10 +308,7 @@ export interface IDisplayPost extends IMainMessageBase {
 }
 
 export type IMainMessage =
-  | IDisplayShape
-  | IWorkerInitialized
-  | IDisplayPost
-  | IDryRunResponse;
+  IDisplayShape | IWorkerInitialized | IDisplayPost | IDryRunResponse;
 
 export interface IWorkerMessageBase {
   id: string;
@@ -388,8 +385,7 @@ export interface IJupyterCadOutputWidget extends MainAreaWidget {
 }
 
 export type IJupyterCadWidget =
-  | IJupyterCadDocumentWidget
-  | IJupyterCadOutputWidget;
+  IJupyterCadDocumentWidget | IJupyterCadOutputWidget;
 
 export interface IJCadFormSchemaRegistry {
   /**
