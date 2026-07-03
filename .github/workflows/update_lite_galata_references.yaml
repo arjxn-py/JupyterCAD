@@ -40,7 +40,7 @@ jobs:
         run: |
           pip install jupyterlab
           jlpm install
-          yarn playwright install chromium
+          yarn playwright install
 
       - uses: jupyterlab/maintainer-tools/.github/actions/update-snapshots@v0.31.1
         with:
