@@ -384,7 +384,9 @@ test.describe('UI Test', () => {
       await page.locator('div.jpcad-Spinner').waitFor({ state: 'hidden' });
 
       // Activate Right Panel
-      await page.locator('li#tab-key-1-8').click();
+      await page
+        .locator('.lm-TabBar-tab[data-id="jupytercad::rightControlPanel"]')
+        .click();
       await page.getByTitle('Create new fork').click();
       await page.locator('div.jp-Dialog-buttonLabel[aria-label="Ok"]').click();
 
@@ -424,7 +426,9 @@ test.describe('UI Test', () => {
       await page.locator('div.jpcad-Spinner').waitFor({ state: 'hidden' });
 
       // Activate Right Panel
-      await page.locator('li#tab-key-1-8').click();
+      await page
+        .locator('.lm-TabBar-tab[data-id="jupytercad::rightControlPanel"]')
+        .click();
       await page.getByTitle('Create new fork').click();
       await page.locator('div.jp-Dialog-buttonLabel[aria-label="Ok"]').click();
 
