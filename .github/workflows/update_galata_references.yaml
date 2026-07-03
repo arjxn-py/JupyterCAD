@@ -38,8 +38,9 @@ jobs:
           environment-name: cad
           create-args: >-
             python=3.10
-            jupyterlab=4
+            jupyterlab=4.6
             pythonocc-core=7.7.0
+            yarn=3
 
       - name: Install the extension
         shell: bash -l {0}
@@ -54,12 +55,12 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
         run: |
-          jlpm install
+          yarn install
           yarn playwright install chromium --only-shell
 
       - uses: jupyterlab/maintainer-tools/.github/actions/update-snapshots@v0.31.1
         with:
-          npm_client: jlpm
+          npm_client: yarn
           browser: chromium
           github_token: ${{ secrets.GITHUB_TOKEN }}
           start_server_script: 'null'
