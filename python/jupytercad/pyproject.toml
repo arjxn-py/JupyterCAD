@@ -28,7 +28,7 @@ dependencies = [
   "jupyter-docprovider>=2,<3",
   "jupyter-server-ydoc>=2,<3",
   "jupyter-collaboration-ui>=2,<3",
-  "jupyterlab>=4.5.1,<5",
+  "jupyterlab>=4.6.0,<5",
 ]
 dynamic = ["version"]
 license = {file = "LICENSE"}
