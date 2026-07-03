@@ -131,7 +131,6 @@ jobs:
           name: extension-artifacts
 
       - name: Install and Test
-        # TODO Update JupyterLab version
         run: |
           set -eux
           # Remove NodeJS, twice to take care of system and locally installed node versions.
@@ -139,7 +138,7 @@ jobs:
           sudo rm -rf $(which node)
 
           cp ./jupytercad_core/dist/jupytercad*.whl ./jupytercad_lab/dist/jupytercad*.whl ./jupytercad_app/dist/jupytercad*.whl .
-          python -m pip install "jupyterlab==4.5.1" jupytercad*.whl
+          python -m pip install "jupyterlab>=4.6.0,<5" jupytercad*.whl
 
           jupyter labextension list
           jupyter labextension list 2>&1 | grep -ie "jupytercad.*OK"
@@ -165,8 +164,9 @@ jobs:
           environment-name: cad
           create-args: >-
             python=3.10
-            jupyterlab=4.4.2
+            jupyterlab=4.6
             pythonocc-core=7.7.0
+            yarn=3
 
       - name: Download extension package
         uses: actions/download-artifact@v4
@@ -184,13 +184,13 @@ jobs:
         shell: bash -l {0}
         working-directory: ui-tests
         run: |
-          jlpm install
+          yarn install
           yarn playwright install chromium
 
       - name: Execute integration tests
         shell: bash -l {0}
         working-directory: ui-tests
-        run: jlpm run test
+        run: yarn run test
 
       - name: Upload Playwright Test report
         id: upload-galata-artifact
