@@ -12,6 +12,7 @@ import { JSONObject } from '@lumino/coreutils';
 import { ISignal, Signal } from '@lumino/signaling';
 import { SplitPanel } from '@lumino/widgets';
 import { Contents } from '@jupyterlab/services';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import {
   IJCadContent,
@@ -110,7 +111,7 @@ export interface IJupyterCadDoc extends YDocument<IJupyterCadDocChange> {
   setOutput(key: string, value: IPostResult): void;
   removeOutput(key: string): void;
 
-  getSource(): JSONObject;
+  getSource(): string;
   setSource(value: JSONObject | string): void;
 
   getMetadata(key: string): string | undefined;
@@ -159,9 +160,14 @@ export interface IJupyterCadModel extends DocumentRegistry.IModel {
   sharedModelSwapped: ISignal<IJupyterCadModel, void>;
   users?: IUserData[];
   currentUserId?: number | undefined;
+  settingsChanged: ISignal<IJupyterCadModel, string>;
+  jcadSettings: IJCadSettings;
 
   swapSharedModel(newSharedModel: IJupyterCadDoc): void;
 
+  initSettings(): Promise<void>;
+  getSettings(): Promise<ISettingRegistry.ISettings>;
+  emitSettingChanged(key: string): void;
   getWorker(): Worker;
   getContent(): IJCadContent;
   getAllObject(): IJCadModel;
@@ -302,10 +308,7 @@ export interface IDisplayPost extends IMainMessageBase {
 }
 
 export type IMainMessage =
-  | IDisplayShape
-  | IWorkerInitialized
-  | IDisplayPost
-  | IDryRunResponse;
+  IDisplayShape | IWorkerInitialized | IDisplayPost | IDryRunResponse;
 
 export interface IWorkerMessageBase {
   id: string;
@@ -318,7 +321,8 @@ export type IMessageHandler =
 
 export enum JCadWorkerSupportedFormat {
   BREP = 'BREP',
-  GLTF = 'GLTF'
+  GLTF = 'GLTF',
+  STL = 'STL'
 }
 export interface IJCadWorker {
   ready: Promise<void>;
@@ -369,8 +373,10 @@ export interface IJCadWorkerRegistry {
 
 export type IJupyterCadTracker = IWidgetTracker<IJupyterCadWidget>;
 
-export interface IJupyterCadDocumentWidget
-  extends IDocumentWidget<SplitPanel, IJupyterCadModel> {
+export interface IJupyterCadDocumentWidget extends IDocumentWidget<
+  SplitPanel,
+  IJupyterCadModel
+> {
   readonly model: IJupyterCadModel;
 }
 
@@ -379,8 +385,7 @@ export interface IJupyterCadOutputWidget extends MainAreaWidget {
 }
 
 export type IJupyterCadWidget =
-  | IJupyterCadDocumentWidget
-  | IJupyterCadOutputWidget;
+  IJupyterCadDocumentWidget | IJupyterCadOutputWidget;
 
 export interface IJCadFormSchemaRegistry {
   /**
@@ -419,4 +424,9 @@ export interface IJCadExternalCommand {
 export interface IJCadExternalCommandRegistry {
   getCommands(): IJCadExternalCommand[];
   registerCommand(command: IJCadExternalCommand): void;
+}
+
+export interface IJCadSettings {
+  showAxesHelper: boolean;
+  cameraType: 'Perspective' | 'Orthographic';
 }

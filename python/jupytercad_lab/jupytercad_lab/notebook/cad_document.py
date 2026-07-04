@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from pycrdt import Array, Doc, Map
+from pycrdt import Array, Doc, Map, Text
 from pydantic import BaseModel
 from ypywidgets.comm import CommWidget
 
@@ -24,10 +24,13 @@ from jupytercad_core.schema import (
     IChamfer,
     IFillet,
     ITorus,
+    ISketchObject,
     Parts,
     ShapeMetadata,
     IAny,
+    SCHEMA_VERSION,
 )
+from jupytercad_core.schema.interfaces import geomLineSegment, geomCircle
 
 logger = logging.getLogger(__file__)
 
@@ -50,6 +53,7 @@ class CadDocument(CommWidget):
             ydoc=ydoc,
         )
 
+        self.ydoc["schemaVersion"] = self._schemaVersion = Text(SCHEMA_VERSION)
         self.ydoc["objects"] = self._objects_array = Array()
         self.ydoc["metadata"] = self._metadata = Map()
         self.ydoc["outputs"] = self._outputs = Map()
@@ -63,6 +67,49 @@ class CadDocument(CommWidget):
         if self._objects_array:
             return [x["name"] for x in self._objects_array]
         return []
+
+    @classmethod
+    def import_from_file(cls, path: str | Path) -> CadDocument:
+        """
+        Import a CadDocument from a .jcad file.
+
+        :param path: The path to the file.
+        :return: A new CadDocument instance.
+        """
+        instance = cls()
+        with open(path, "r") as f:
+            jcad_content = json.load(f)
+
+        instance.ydoc["objects"] = instance._objects_array = Array(
+            [Map(obj) for obj in jcad_content.get("objects", [])]
+        )
+        instance.ydoc["options"] = instance._options = Map(
+            jcad_content.get("options", {})
+        )
+        instance.ydoc["metadata"] = instance._metadata = Map(
+            jcad_content.get("metadata", {})
+        )
+        instance.ydoc["outputs"] = instance._outputs = Map(
+            jcad_content.get("outputs", {})
+        )
+
+        return instance
+
+    def save(self, path: str | Path) -> None:
+        """
+        Save the CadDocument to a .jcad file on the local filesystem.
+
+        :param path: The path to the file.
+        """
+        content = {
+            "schemaVersion": SCHEMA_VERSION,
+            "objects": self._objects_array.to_py(),
+            "options": self._options.to_py(),
+            "metadata": self._metadata.to_py(),
+            "outputs": self._outputs.to_py(),
+        }
+        with open(path, "w") as f:
+            json.dump(content, f, indent=4)
 
     @classmethod
     def _path_to_comm(cls, filePath: Optional[str]) -> Dict:
@@ -109,9 +156,30 @@ class CadDocument(CommWidget):
             return "#808080"
 
     def remove(self, name: str) -> CadDocument:
+        """
+        Remove an object from the document.
+
+        :param name: The name of the object to remove.
+        :return: The document itself.
+        """
         index = self._get_yobject_index_by_name(name)
         if self._objects_array and index != -1:
             self._objects_array.pop(index)
+        return self
+
+    def rename(self, old_name: str, new_name: str) -> CadDocument:
+        """
+        Rename an object in the document.
+
+        :param old_name: The current name of the object.
+        :param new_name: The new name for the object.
+        :return: The document itself.
+        """
+        if new_name == old_name:
+            return self
+        new_obj = self.get_object(old_name)
+        new_obj.name = new_name
+        self.add_object(new_obj).remove(old_name)
         return self
 
     def add_object(self, new_object: "PythonJcadObject") -> CadDocument:
@@ -227,7 +295,7 @@ class CadDocument(CommWidget):
         :return: The document itself.
         """
         try:
-            from OCC.Core.BRepTools import breptools_Write
+            from OCC.Core.BRepTools import breptools
         except ImportError:
             raise RuntimeError("Cannot add an OpenCascade shape if it's not installed.")
 
@@ -237,7 +305,7 @@ class CadDocument(CommWidget):
             return
 
         with tempfile.NamedTemporaryFile() as tmp:
-            breptools_Write(shape, tmp.name, True, False, 1)
+            breptools.Write(shape, tmp.name, True, False, 1)
             brepdata = tmp.read().decode("ascii")
 
         data = {
@@ -476,6 +544,54 @@ class CadDocument(CommWidget):
         }
         return self.add_object(OBJECT_FACTORY.create_object(data, self))
 
+    def add_sketch(
+        self,
+        name: str = "",
+        geometry: List[
+            Union[geomCircle.IGeomCircle, geomLineSegment.IGeomLineSegment]
+        ] = [],
+        attachment_offset_position: List[float] = [0, 0, 0],
+        attachment_offset_rotation_axis: List[float] = [0, 0, 1],
+        attachment_offset_rotation_angle: float = 0,
+        color: str = "#808080",
+        position: List[float] = [0, 0, 0],
+        rotation_axis: List[float] = [0, 0, 1],
+        rotation_angle: float = 0,
+    ) -> CadDocument:
+        """
+        Add a sketch to the document.
+
+        :param name: The name that will be used for the object in the document.
+        :param geometry: The list of geometries for the sketch.
+        :param attachment_offset_position: The attachment offset 3D position.
+        :param attachment_offset_rotation_axis: The attachment offset 3D axis used for the rotation.
+        :param attachment_offset_rotation_angle: The attachment offset rotation angle, in degrees.
+        :param color: The color of the sketch in hex format (e.g., "#FF5733") or RGB float list.
+        :param position: The shape 3D position.
+        :param rotation_axis: The 3D axis used for the rotation.
+        :param rotation_angle: The shape rotation angle, in degrees.
+        :return: The document itself.
+        """
+        data = {
+            "shape": Parts.Sketcher__SketchObject.value,
+            "name": name if name else self._new_name("Sketch"),
+            "parameters": {
+                "AttachmentOffset": {
+                    "Position": attachment_offset_position,
+                    "Axis": attachment_offset_rotation_axis,
+                    "Angle": attachment_offset_rotation_angle,
+                },
+                "Geometry": geometry,
+                "Color": color,
+                "Placement": {
+                    "Position": position,
+                    "Axis": rotation_axis,
+                    "Angle": rotation_angle,
+                },
+            },
+        }
+        return self.add_object(OBJECT_FACTORY.create_object(data, self))
+
     def cut(
         self,
         name: str = "",
@@ -514,7 +630,11 @@ class CadDocument(CommWidget):
                 "Tool": tool,
                 "Refine": refine,
                 "Color": color,
-                "Placement": {"Position": [0, 0, 0], "Axis": [0, 0, 1], "Angle": 0},
+                "Placement": {
+                    "Position": position,
+                    "Axis": rotation_axis,
+                    "Angle": rotation_angle,
+                },
             },
         }
         self.set_visible(base, False)
@@ -557,7 +677,12 @@ class CadDocument(CommWidget):
             "parameters": {
                 "Shapes": [shape1, shape2],
                 "Refine": refine,
-                "Placement": {"Position": [0, 0, 0], "Axis": [0, 0, 1], "Angle": 0},
+                "Color": color,
+                "Placement": {
+                    "Position": position,
+                    "Axis": rotation_axis,
+                    "Angle": rotation_angle,
+                },
             },
         }
         self.set_visible(shape1, False)
@@ -601,11 +726,70 @@ class CadDocument(CommWidget):
             "parameters": {
                 "Shapes": [shape1, shape2],
                 "Refine": refine,
-                "Placement": {"Position": [0, 0, 0], "Axis": [0, 0, 1], "Angle": 0},
+                "Color": color,
+                "Placement": {
+                    "Position": position,
+                    "Axis": rotation_axis,
+                    "Angle": rotation_angle,
+                },
             },
         }
         self.set_visible(shape1, False)
         self.set_visible(shape2, False)
+        return self.add_object(OBJECT_FACTORY.create_object(data, self))
+
+    def extrude(
+        self,
+        name: str = "",
+        shape: str | int = None,
+        direction: List[float] = [0, 0, 1],
+        length_fwd: float = 10,
+        length_rev: float = 0,
+        solid: bool = False,
+        color: Optional[str] = None,
+        position: List[float] = [0, 0, 0],
+        rotation_axis: List[float] = [0, 0, 1],
+        rotation_angle: float = 0,
+    ) -> CadDocument:
+        """
+        Apply an extrusion operation on an object.
+        If no object is provided as input, the last created object will be used as operand.
+
+        :param name: The name that will be used for the object in the document.
+        :param shape: The input object used for the extrusion. Can be the name of the object or its index in the objects list.
+        :param direction: The direction of the extrusion.
+        :param length_fwd: The length of the extrusion.
+        :param length_rev: The length of the extrusion in the reverse direction.
+        :param solid: Whether to create a solid or a shell.
+        :param color: The color in hex format (e.g., "#FF5733") or RGB float list. Defaults to the base object's color if None.
+        :param position: The shape 3D position.
+        :param rotation_axis: The 3D axis used for the rotation.
+        :param rotation_angle: The shape rotation angle, in degrees.
+        :return: The document itself.
+        """
+        shape = self._get_operand(shape)
+
+        if color is None:
+            color = self._get_color(shape)
+
+        data = {
+            "shape": Parts.Part__Extrusion.value,
+            "name": name if name else self._new_name("Extrusion"),
+            "parameters": {
+                "Base": shape,
+                "Dir": direction,
+                "LengthFwd": length_fwd,
+                "LengthRev": length_rev,
+                "Solid": solid,
+                "Color": color,
+                "Placement": {
+                    "Position": position,
+                    "Axis": rotation_axis,
+                    "Angle": rotation_angle,
+                },
+            },
+        }
+        self.set_visible(shape, False)
         return self.add_object(OBJECT_FACTORY.create_object(data, self))
 
     def chamfer(
@@ -646,7 +830,12 @@ class CadDocument(CommWidget):
                 "Base": shape,
                 "Edge": edge,
                 "Dist": dist,
-                "Placement": {"Position": [0, 0, 0], "Axis": [0, 0, 1], "Angle": 0},
+                "Color": color,
+                "Placement": {
+                    "Position": position,
+                    "Axis": rotation_axis,
+                    "Angle": rotation_angle,
+                },
             },
         }
         self.set_visible(shape, False)
@@ -690,7 +879,12 @@ class CadDocument(CommWidget):
                 "Base": shape,
                 "Edge": edge,
                 "Radius": radius,
-                "Placement": {"Position": [0, 0, 0], "Axis": [0, 0, 1], "Angle": 0},
+                "Color": color,
+                "Placement": {
+                    "Position": position,
+                    "Axis": rotation_axis,
+                    "Angle": rotation_angle,
+                },
             },
         }
         self.set_visible(shape, False)
@@ -719,6 +913,12 @@ class CadDocument(CommWidget):
         return shape1, shape2
 
     def set_visible(self, name: str, value):
+        """
+        Set the visibility of an object.
+
+        :param name: The name of the object.
+        :param value: The visibility value (True or False).
+        """
         obj: Optional[Map] = self._get_yobject_by_name(name)
 
         if obj is None:
@@ -727,6 +927,12 @@ class CadDocument(CommWidget):
         obj["visible"] = value
 
     def set_color(self, name: str, value: str):
+        """
+        Set the color of an object.
+
+        :param name: The name of the object.
+        :param value: The color in hex format (e.g., "#FF5733").
+        """
         obj: Optional[Map] = self._get_yobject_by_name(name)
 
         if obj is None:
@@ -784,6 +990,7 @@ class PythonJcadObject(BaseModel):
         IFuse,
         ISphere,
         ITorus,
+        ISketchObject,
         IFillet,
         IChamfer,
     ]
@@ -852,5 +1059,6 @@ OBJECT_FACTORY.register_factory(Parts.Part__MultiCommon.value, IIntersection)
 OBJECT_FACTORY.register_factory(Parts.Part__MultiFuse.value, IFuse)
 OBJECT_FACTORY.register_factory(Parts.Part__Sphere.value, ISphere)
 OBJECT_FACTORY.register_factory(Parts.Part__Torus.value, ITorus)
+OBJECT_FACTORY.register_factory(Parts.Sketcher__SketchObject.value, ISketchObject)
 OBJECT_FACTORY.register_factory(Parts.Part__Chamfer.value, IChamfer)
 OBJECT_FACTORY.register_factory(Parts.Part__Fillet.value, IFillet)

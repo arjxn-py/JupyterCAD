@@ -7,10 +7,7 @@ test.describe('UI Test', () => {
   const fileList = ['test.jcad', '3M_CONNECTOR.STEP', 'fan.stl'];
 
   test.describe('Extension activation test', () => {
-    test('should emit an activation console message', async ({
-      page,
-      request
-    }) => {
+    test('should emit an activation console message', async ({ page }) => {
       const logs: string[] = [];
 
       page.on('console', message => {
@@ -283,14 +280,7 @@ test.describe('UI Test', () => {
       await page.sidebar.close('right');
       // Apply Exploded view
       await page.getByTitle('Exploded View').click();
-      await page.getByLabel('Enabled').click();
-      await page.locator('input#root_Factor').click();
-      await page.locator('input#root_Factor').fill('3.5');
-      await page
-        .locator('div.jp-Dialog-buttonLabel', {
-          hasText: 'Submit'
-        })
-        .click();
+      await page.getByRole('slider').fill('3.5');
 
       let main = await page.$('#jp-main-split-panel');
       if (main) {
@@ -305,7 +295,7 @@ test.describe('UI Test', () => {
     test.describe('Extension activation test', () => {
       test('should create a CAD File', async ({ page, request }) => {
         await page.goto();
-        await page.getByLabel('notebook content').getByText('CAD File').click();
+        await page.getByText('CAD File').click();
 
         await page.getByTitle('New Box').getByRole('button').click();
         await page.getByRole('button', { name: 'Submit' }).click();
@@ -365,7 +355,7 @@ test.describe('UI Test', () => {
       await page.goto();
       await page.sidebar.close('right');
       await page.sidebar.close('left');
-      await page.getByLabel('notebook content').getByText('CAD File').click();
+      await page.getByText('CAD File').click();
       await page.getByRole('button', { name: 'Toggle console' }).click();
       await page.getByRole('button', { name: 'Remove console' });
       await page.getByRole('textbox').nth(1).click();
@@ -394,7 +384,9 @@ test.describe('UI Test', () => {
       await page.locator('div.jpcad-Spinner').waitFor({ state: 'hidden' });
 
       // Activate Right Panel
-      await page.locator('li#tab-key-1-7').click();
+      await page
+        .locator('.lm-TabBar-tab[data-id="jupytercad::rightControlPanel"]')
+        .click();
       await page.getByTitle('Create new fork').click();
       await page.locator('div.jp-Dialog-buttonLabel[aria-label="Ok"]').click();
 
@@ -434,7 +426,9 @@ test.describe('UI Test', () => {
       await page.locator('div.jpcad-Spinner').waitFor({ state: 'hidden' });
 
       // Activate Right Panel
-      await page.locator('li#tab-key-1-7').click();
+      await page
+        .locator('.lm-TabBar-tab[data-id="jupytercad::rightControlPanel"]')
+        .click();
       await page.getByTitle('Create new fork').click();
       await page.locator('div.jp-Dialog-buttonLabel[aria-label="Ok"]').click();
 

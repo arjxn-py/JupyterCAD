@@ -1,7 +1,4 @@
-import {
-  ICollaborativeDrive,
-  SharedDocumentFactory
-} from '@jupyter/collaborative-drive';
+import { ICollaborativeContentProvider } from '@jupyter/collaborative-drive';
 import { logoIcon, CommandIDs as BaseCommandIDs } from '@jupytercad/base';
 import {
   SCHEMA_VERSION,
@@ -24,6 +21,7 @@ import {
   IThemeManager,
   WidgetTracker
 } from '@jupyterlab/apputils';
+import { SharedDocumentFactory } from '@jupyterlab/services';
 import { IEditorServices } from '@jupyterlab/codeeditor';
 import { ConsolePanel, IConsoleTracker } from '@jupyterlab/console';
 import { IFileBrowserFactory } from '@jupyterlab/filebrowser';
@@ -33,16 +31,18 @@ import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
 import { JupyterCadDocumentWidgetFactory } from '../factory';
 import { JupyterCadJcadModelFactory } from './modelfactory';
 import { MimeDocumentFactory } from '@jupyterlab/docregistry';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 const FACTORY = 'JupyterCAD';
 const CONTENT_TYPE = 'jcad';
 const PALETTE_CATEGORY = 'JupyterCAD';
+const SETTINGS_ID = '@jupytercad/jupytercad-core:jupytercad-settings';
 
 namespace CommandIDs {
   export const createNew = 'jupytercad:create-new-jcad-file';
 }
 
-const activate = (
+const activate = async (
   app: JupyterFrontEnd,
   tracker: WidgetTracker<IJupyterCadWidget>,
   themeManager: IThemeManager,
@@ -56,8 +56,22 @@ const activate = (
   consoleTracker: IConsoleTracker,
   launcher: ILauncher | null,
   palette: ICommandPalette | null,
-  drive: ICollaborativeDrive | null
-): void => {
+  collaborativeContentProvider: ICollaborativeContentProvider | null,
+  settingRegistry?: ISettingRegistry
+): Promise<void> => {
+  let settings: ISettingRegistry.ISettings | null = null;
+
+  if (settingRegistry) {
+    try {
+      settings = await settingRegistry.load(SETTINGS_ID);
+      console.log(`Loaded settings for ${SETTINGS_ID}`, settings);
+    } catch (error) {
+      console.warn(`Failed to load settings for ${SETTINGS_ID}`, error);
+    }
+  } else {
+    console.warn('No settingRegistry available; using default settings.');
+  }
+
   const widgetFactory = new JupyterCadDocumentWidgetFactory({
     name: FACTORY,
     modelName: 'jupytercad-jcadmodel',
@@ -89,7 +103,8 @@ const activate = (
 
   // Creating and registering the model factory for our custom DocumentModel
   const modelFactory = new JupyterCadJcadModelFactory({
-    annotationModel
+    annotationModel,
+    settingRegistry
   });
   app.docRegistry.addModelFactory(modelFactory);
   // register the filetype
@@ -99,15 +114,14 @@ const activate = (
     mimeTypes: ['text/json'],
     extensions: ['.jcad', '.JCAD'],
     fileFormat: 'text',
-    contentType: CONTENT_TYPE,
     icon: logoIcon
   });
 
   const jcadSharedModelFactory: SharedDocumentFactory = () => {
     return new JupyterCadDoc();
   };
-  if (drive) {
-    drive.sharedModelFactory.registerDocumentFactory(
+  if (collaborativeContentProvider) {
+    collaborativeContentProvider.sharedModelFactory.registerDocumentFactory(
       CONTENT_TYPE,
       jcadSharedModelFactory
     );
@@ -126,9 +140,25 @@ const activate = (
   });
 
   app.commands.addCommand(CommandIDs.createNew, {
-    label: args => 'CAD File',
+    label: args => (args['label'] as string) ?? 'CAD file',
     caption: 'Create a new JCAD Editor',
     icon: logoIcon,
+    describedBy: {
+      args: {
+        type: 'object',
+        properties: {
+          label: {
+            type: 'string',
+            description: 'The label for the file creation command'
+          },
+          cwd: {
+            type: 'string',
+            description:
+              'The current working directory where the file should be created'
+          }
+        }
+      }
+    },
     execute: async args => {
       // Get the directory in which the JCAD file must be created;
       // otherwise take the current filebrowser directory
@@ -180,6 +210,14 @@ const activate = (
       });
     }
   }
+
+  // Inject “New JupyterCAD file” into the File Browser context menu
+  app.contextMenu.addItem({
+    command: CommandIDs.createNew,
+    selector: '.jp-DirListing',
+    rank: 55,
+    args: { label: 'New JupyterCAD file' }
+  });
 };
 
 const jcadPlugin: JupyterFrontEndPlugin<void> = {
@@ -196,7 +234,12 @@ const jcadPlugin: JupyterFrontEndPlugin<void> = {
     IRenderMimeRegistry,
     IConsoleTracker
   ],
-  optional: [ILauncher, ICommandPalette, ICollaborativeDrive],
+  optional: [
+    ILauncher,
+    ICommandPalette,
+    ICollaborativeContentProvider,
+    ISettingRegistry
+  ],
   autoStart: true,
   activate
 };

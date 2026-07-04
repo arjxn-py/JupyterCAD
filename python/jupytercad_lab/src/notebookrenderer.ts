@@ -1,4 +1,4 @@
-import { ICollaborativeDrive } from '@jupyter/collaborative-drive';
+import { ICollaborativeContentProvider } from '@jupyter/collaborative-drive';
 import {
   JupyterCadPanel,
   JupyterCadOutputWidget,
@@ -34,6 +34,10 @@ import { ConsolePanel } from '@jupyterlab/console';
 import { PathExt } from '@jupyterlab/coreutils';
 import { NotebookPanel } from '@jupyterlab/notebook';
 import { CommandRegistry } from '@lumino/commands';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
+
+const SETTINGS_ID = '@jupytercad/jupytercad-core:jupytercad-settings';
+export const CLASS_NAME = 'jupytercad-notebook-widget';
 
 export interface ICommMetadata {
   create_ydoc: boolean;
@@ -43,10 +47,18 @@ export interface ICommMetadata {
   ymodel_name: string;
 }
 
-export const CLASS_NAME = 'jupytercad-notebook-widget';
-
 export class YJupyterCADModel extends JupyterYModel {
   jupyterCADModel: JupyterCadModel;
+
+  dispose(): void {
+    if (this.isDisposed) {
+      return;
+    }
+    // Dispose the underlying collaborative model so its RTC provider is torn
+    // down.
+    this.jupyterCADModel?.dispose();
+    super.dispose();
+  }
 }
 
 export class YJupyterCADLuminoWidget extends Panel {
@@ -136,16 +148,29 @@ export const notebookRenderePlugin: JupyterFrontEndPlugin<void> = {
     IJCadExternalCommandRegistryToken,
     IJupyterCadDocTracker,
     IJupyterYWidgetManager,
-    ICollaborativeDrive
+    ICollaborativeContentProvider,
+    ISettingRegistry
   ],
-  activate: (
+  activate: async (
     app: JupyterFrontEnd,
     workerRegistry: IJCadWorkerRegistry,
     externalCommandRegistry?: IJCadExternalCommandRegistry,
     jcadTracker?: JupyterCadTracker,
     yWidgetManager?: IJupyterYWidgetManager,
-    drive?: ICollaborativeDrive
-  ): void => {
+    collaborativeContentProvider?: ICollaborativeContentProvider,
+    settingRegistry?: ISettingRegistry
+  ): Promise<void> => {
+    let settings: ISettingRegistry.ISettings | null = null;
+
+    if (settingRegistry) {
+      try {
+        settings = await settingRegistry.load(SETTINGS_ID);
+        console.log(`Loaded settings for ${SETTINGS_ID}`, settings);
+      } catch (error) {
+        console.warn(`Failed to load settings for ${SETTINGS_ID}`, error);
+      }
+    }
+
     if (!yWidgetManager) {
       console.error('Missing IJupyterYWidgetManager token!');
       return;
@@ -158,7 +183,7 @@ export const notebookRenderePlugin: JupyterFrontEndPlugin<void> = {
         const { path, format, contentType } = commMetadata;
         const fileFormat = format as Contents.FileFormat;
 
-        if (!drive) {
+        if (!collaborativeContentProvider) {
           showErrorMessage(
             'Error using the JupyterCAD Python API',
             'You cannot use the JupyterCAD Python API without a collaborative drive. You need to install a package providing collaboration features (e.g. jupyter-collaboration).'
@@ -199,15 +224,17 @@ export const notebookRenderePlugin: JupyterFrontEndPlugin<void> = {
           );
         }
 
-        const sharedModel = drive!.sharedModelFactory.createNew({
-          path: localPath,
-          format: fileFormat,
-          contentType,
-          collaborative: true
-        })!;
+        const sharedModel =
+          collaborativeContentProvider.sharedModelFactory.createNew({
+            path: localPath,
+            format: fileFormat,
+            contentType,
+            collaborative: true
+          })!;
         const jupyterCadDoc = sharedModel as IJupyterCadDoc;
         this.jupyterCADModel = new JupyterCadModel({
-          sharedModel: jupyterCadDoc
+          sharedModel: jupyterCadDoc,
+          settingRegistry: settingRegistry
         });
 
         this.jupyterCADModel.contentsManager = app.serviceManager.contents;

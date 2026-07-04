@@ -26,8 +26,7 @@ import { MessageLoop } from '@lumino/messaging';
 const CELL_OUTPUT_WIDGET_CLASS = 'jcad-cell-output-widget';
 
 export type JupyterCadWidget =
-  | JupyterCadDocumentWidget
-  | JupyterCadOutputWidget;
+  JupyterCadDocumentWidget | JupyterCadOutputWidget;
 export class JupyterCadDocumentWidget
   extends DocumentWidget<JupyterCadPanel, IJupyterCadModel>
   implements IJupyterCadDocumentWidget
@@ -102,17 +101,43 @@ export class JupyterCadPanel extends SplitPanel {
   constructor(options: JupyterCadPanel.IOptions) {
     super({ orientation: 'vertical', spacing: 0 });
     const { model, workerRegistry, consoleTracker, ...consoleOption } = options;
-    this._initModel({ model, workerRegistry });
-    this._initView();
     this._consoleOption = consoleOption;
     this._consoleTracker = consoleTracker;
+    this._initModel({ model, workerRegistry }).then(() => {
+      this._initView();
+    });
   }
 
-  _initModel(options: {
+  async _initModel(options: {
     model: IJupyterCadModel;
     workerRegistry: IJCadWorkerRegistry;
-  }) {
-    this._view = new ObservableMap<JSONValue>();
+  }): Promise<void> {
+    this._view = new ObservableMap<JSONValue>({});
+
+    await options.model.initSettings();
+    const settings = await options.model.getSettings();
+
+    const compositeSettings = settings?.composite ?? {};
+
+    const cameraSettings: CameraSettings = {
+      type:
+        (compositeSettings.cameraType as 'Perspective' | 'Orthographic') ??
+        'Perspective'
+    };
+
+    const axes: AxeHelper = {
+      visible: (compositeSettings.showAxesHelper as boolean) ?? false
+    };
+
+    const explodedView: ExplodedView = {
+      enabled: false,
+      factor: 0
+    };
+
+    this._view.set('cameraSettings', cameraSettings);
+    this._view.set('explodedView', explodedView);
+    this._view.set('axes', axes);
+
     this._mainViewModel = new MainViewModel({
       jcadModel: options.model,
       workerRegistry: options.workerRegistry,
@@ -158,28 +183,28 @@ export class JupyterCadPanel extends SplitPanel {
     return this._mainViewModel;
   }
 
-  get axes(): AxeHelper | undefined {
-    return this._view.get('axes') as AxeHelper | undefined;
+  get axes(): AxeHelper {
+    return this._view.get('axes') as AxeHelper;
   }
 
-  set axes(value: AxeHelper | undefined) {
-    this._view.set('axes', value || null);
+  set axes(value: AxeHelper) {
+    this._view.set('axes', value);
   }
 
-  get explodedView(): ExplodedView | undefined {
-    return this._view.get('explodedView') as ExplodedView | undefined;
+  get explodedView(): ExplodedView {
+    return this._view.get('explodedView') as ExplodedView;
   }
 
-  set explodedView(value: ExplodedView | undefined) {
-    this._view.set('explodedView', value || null);
+  set explodedView(value: ExplodedView) {
+    this._view.set('explodedView', value);
   }
 
-  get cameraSettings(): CameraSettings | undefined {
-    return this._view.get('cameraSettings') as CameraSettings | undefined;
+  get cameraSettings(): CameraSettings {
+    return this._view.get('cameraSettings') as CameraSettings;
   }
 
-  set cameraSettings(value: CameraSettings | undefined) {
-    this._view.set('cameraSettings', value || null);
+  set cameraSettings(value: CameraSettings) {
+    this._view.set('cameraSettings', value);
   }
 
   get clipView(): ClipSettings | undefined {
@@ -222,6 +247,10 @@ export class JupyterCadPanel extends SplitPanel {
 
   set transform(value: boolean) {
     this._view.set('transform', value);
+  }
+
+  get consoleOpened(): boolean {
+    return this._consoleOpened;
   }
 
   executeConsole() {

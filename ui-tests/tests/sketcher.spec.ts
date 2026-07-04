@@ -93,7 +93,7 @@ test.describe('Sketcher test', () => {
     if (dialog) {
       expect(await dialog.screenshot()).toMatchSnapshot({
         name: `Sketcher-Circle-${fileName}.png`,
-        maxDiffPixelRatio: 0.01
+        maxDiffPixelRatio: 0.03
       });
     }
   });

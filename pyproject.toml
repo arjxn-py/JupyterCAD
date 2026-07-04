@@ -23,11 +23,11 @@ python_packages = [
     "python/jupytercad_app:jupytercad_app",
     "python/jupytercad_core:jupytercad_core",
     "python/jupytercad_lab:jupytercad_lab",
-    "python/jupytercad_lite:jupytercad",
+    "python/jupytercad_lite:jupytercad_lite",
 ]
 
 [tool.jupyter-releaser.hooks]
-before-bump-version = ["python -m pip install hatch 'jupyterlab>=4.0.0'"]
+before-bump-version = ["python -m pip install hatch build 'jupyterlab>=4.0.0'"]
 before-build-npm = [
     "python -m pip install datamodel-code-generator",
     "jlpm",

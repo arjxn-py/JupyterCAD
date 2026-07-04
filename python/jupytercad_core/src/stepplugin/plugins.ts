@@ -1,7 +1,4 @@
-import {
-  ICollaborativeDrive,
-  SharedDocumentFactory
-} from '@jupyter/collaborative-drive';
+import { ICollaborativeContentProvider } from '@jupyter/collaborative-drive';
 import {
   IJCadWorkerRegistry,
   IJCadWorkerRegistryToken,
@@ -14,7 +11,9 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { SharedDocumentFactory } from '@jupyterlab/services';
 import { IThemeManager, WidgetTracker } from '@jupyterlab/apputils';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { JupyterCadStepModelFactory } from './modelfactory';
 import { JupyterCadDocumentWidgetFactory } from '../factory';
@@ -22,15 +21,30 @@ import { JupyterCadStepDoc } from './model';
 import { stpIcon } from '@jupytercad/base';
 
 const FACTORY = 'JupyterCAD STEP Viewer';
+const SETTINGS_ID = '@jupytercad/jupytercad-core:jupytercad-settings';
 
-const activate = (
+const activate = async (
   app: JupyterFrontEnd,
   tracker: WidgetTracker<IJupyterCadWidget>,
   themeManager: IThemeManager,
   workerRegistry: IJCadWorkerRegistry,
   externalCommandRegistry: IJCadExternalCommandRegistry,
-  drive: ICollaborativeDrive | null
-): void => {
+  collaborativeContentProvider: ICollaborativeContentProvider | null,
+  settingRegistry?: ISettingRegistry
+): Promise<void> => {
+  let settings: ISettingRegistry.ISettings | null = null;
+
+  if (settingRegistry) {
+    try {
+      settings = await settingRegistry.load(SETTINGS_ID);
+      console.log(`Loaded settings for ${SETTINGS_ID}`, settings);
+    } catch (error) {
+      console.warn(`Failed to load settings for ${SETTINGS_ID}`, error);
+    }
+  } else {
+    console.warn('No settingRegistry available; using default settings.');
+  }
+
   const widgetFactory = new JupyterCadDocumentWidgetFactory({
     name: FACTORY,
     modelName: 'jupytercad-stepmodel',
@@ -45,7 +59,7 @@ const activate = (
   app.docRegistry.addWidgetFactory(widgetFactory);
 
   // Creating and registering the model factory for our custom DocumentModel
-  const modelFactory = new JupyterCadStepModelFactory();
+  const modelFactory = new JupyterCadStepModelFactory({ settingRegistry });
   app.docRegistry.addModelFactory(modelFactory);
   // register the filetype
   app.docRegistry.addFileType({
@@ -54,15 +68,14 @@ const activate = (
     mimeTypes: ['text/plain'],
     extensions: ['.step', '.STEP'],
     fileFormat: 'text',
-    contentType: 'step',
     icon: stpIcon
   });
 
   const stepSharedModelFactory: SharedDocumentFactory = () => {
     return new JupyterCadStepDoc();
   };
-  if (drive) {
-    drive.sharedModelFactory.registerDocumentFactory(
+  if (collaborativeContentProvider) {
+    collaborativeContentProvider.sharedModelFactory.registerDocumentFactory(
       'step',
       stepSharedModelFactory
     );
@@ -90,7 +103,7 @@ const stepPlugin: JupyterFrontEndPlugin<void> = {
     IJCadWorkerRegistryToken,
     IJCadExternalCommandRegistryToken
   ],
-  optional: [ICollaborativeDrive],
+  optional: [ICollaborativeContentProvider, ISettingRegistry],
   autoStart: true,
   activate
 };

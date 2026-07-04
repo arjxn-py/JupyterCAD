@@ -1,7 +1,4 @@
-import {
-  ICollaborativeDrive,
-  SharedDocumentFactory
-} from '@jupyter/collaborative-drive';
+import { ICollaborativeContentProvider } from '@jupyter/collaborative-drive';
 import {
   IJCadWorkerRegistry,
   IJCadWorkerRegistryToken,
@@ -15,22 +12,56 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 import { IThemeManager, WidgetTracker } from '@jupyterlab/apputils';
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
+import { SharedDocumentFactory } from '@jupyterlab/services';
 
 import { JupyterCadStlModelFactory } from './modelfactory';
 import { JupyterCadDocumentWidgetFactory } from '../factory';
 import { JupyterCadStlDoc } from './model';
 import { stlIcon } from '@jupytercad/base';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
+import { ExportWorker } from './worker';
+import { JCadWorkerSupportedFormat } from '@jupytercad/schema';
 
 const FACTORY = 'JupyterCAD STL Viewer';
+const SETTINGS_ID = '@jupytercad/jupytercad-core:jupytercad-settings';
 
-const activate = (
+const activate = async (
   app: JupyterFrontEnd,
   tracker: WidgetTracker<IJupyterCadWidget>,
   themeManager: IThemeManager,
   workerRegistry: IJCadWorkerRegistry,
   externalCommandRegistry: IJCadExternalCommandRegistry,
-  drive: ICollaborativeDrive | null
-): void => {
+  collaborativeContentProvider: ICollaborativeContentProvider | null,
+  settingRegistry?: ISettingRegistry,
+  translator?: ITranslator
+): Promise<void> => {
+  let settings: ISettingRegistry.ISettings | null = null;
+  translator = translator ?? nullTranslator;
+
+  if (settingRegistry) {
+    try {
+      settings = await settingRegistry.load(SETTINGS_ID);
+      console.log(`Loaded settings for ${SETTINGS_ID}`, settings);
+    } catch (error) {
+      console.warn(`Failed to load settings for ${SETTINGS_ID}`, error);
+    }
+  } else {
+    console.warn('No settingRegistry available; using default settings.');
+  }
+
+  const stlWorker = new ExportWorker({
+    tracker,
+    shapeFormat: JCadWorkerSupportedFormat.STL
+  });
+  workerRegistry.registerWorker('jupytercad-stl:worker', stlWorker);
+
+  const brepWorker = new ExportWorker({
+    tracker,
+    shapeFormat: JCadWorkerSupportedFormat.BREP
+  });
+  workerRegistry.registerWorker('jupytercad-brep:worker', brepWorker);
+
   const widgetFactory = new JupyterCadDocumentWidgetFactory({
     name: FACTORY,
     modelName: 'jupytercad-stlmodel',
@@ -41,28 +72,28 @@ const activate = (
     workerRegistry,
     externalCommandRegistry
   });
-  // Registering the widget factory
+
   app.docRegistry.addWidgetFactory(widgetFactory);
 
-  // Creating and registering the model factory for our custom DocumentModel
-  const modelFactory = new JupyterCadStlModelFactory();
+  const modelFactory = new JupyterCadStlModelFactory(
+    settingRegistry ? { settingRegistry } : {}
+  );
   app.docRegistry.addModelFactory(modelFactory);
-  // register the filetype
+
   app.docRegistry.addFileType({
     name: 'stl',
     displayName: 'STL',
     mimeTypes: ['text/plain'],
     extensions: ['.stl', '.STL'],
     fileFormat: 'text',
-    contentType: 'stl',
     icon: stlIcon
   });
 
   const stlSharedModelFactory: SharedDocumentFactory = () => {
     return new JupyterCadStlDoc();
   };
-  if (drive) {
-    drive.sharedModelFactory.registerDocumentFactory(
+  if (collaborativeContentProvider) {
+    collaborativeContentProvider.sharedModelFactory.registerDocumentFactory(
       'stl',
       stlSharedModelFactory
     );
@@ -90,7 +121,7 @@ const stlPlugin: JupyterFrontEndPlugin<void> = {
     IJCadWorkerRegistryToken,
     IJCadExternalCommandRegistryToken
   ],
-  optional: [ICollaborativeDrive],
+  optional: [ICollaborativeContentProvider, ISettingRegistry, ITranslator],
   autoStart: true,
   activate
 };

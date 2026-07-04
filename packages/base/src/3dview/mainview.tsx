@@ -26,7 +26,6 @@ import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper';
 import { FloatingAnnotation } from '../annotation';
 import { getCSSVariableColor, throttle } from '../tools';
 import {
-  AxeHelper,
   CameraSettings,
   ClipSettings,
   ExplodedView,
@@ -77,7 +76,10 @@ interface IStates {
   wireframe: boolean;
   transform: boolean;
   clipEnabled: boolean;
+  explodedViewEnabled: boolean;
+  explodedViewFactor: number;
   rotationSnapValue: number;
+  translationSnapValue: number;
   transformMode: string | undefined;
 }
 
@@ -113,6 +115,7 @@ export class MainView extends React.Component<IProps, IStates> {
     );
     this._mainViewModel.renderSignal.connect(this._requestRender, this);
     this._mainViewModel.workerBusy.connect(this._workerBusyHandler, this);
+    this._mainViewModel.afterShowSignal.connect(this._handleWindowResize, this);
 
     this._raycaster.params.Line2 = { threshold: 50 };
 
@@ -123,14 +126,18 @@ export class MainView extends React.Component<IProps, IStates> {
       firstLoad: true,
       wireframe: false,
       transform: false,
-      clipEnabled: true,
+      clipEnabled: false,
+      explodedViewEnabled: false,
+      explodedViewFactor: 0,
       rotationSnapValue: 10,
+      translationSnapValue: 1,
       transformMode: 'translate'
     };
+
+    this._model.settingsChanged.connect(this._handleSettingsChange, this);
   }
 
   componentDidMount(): void {
-    window.addEventListener('resize', this._handleWindowResize);
     this.generateScene();
     this.addContextMenu();
     this._mainViewModel.initWorker();
@@ -145,6 +152,7 @@ export class MainView extends React.Component<IProps, IStates> {
     this._transformControls.rotationSnap = THREE.MathUtils.degToRad(
       this.state.rotationSnapValue
     );
+    this._transformControls.translationSnap = this.state.translationSnapValue;
     this._keyDownHandler = (event: KeyboardEvent) => {
       if (event.key === 'r') {
         const newMode = this._transformControls.mode || 'translate';
@@ -162,6 +170,9 @@ export class MainView extends React.Component<IProps, IStates> {
       this._transformControls.rotationSnap = THREE.MathUtils.degToRad(
         this.state.rotationSnapValue
       );
+    }
+    if (oldState.translationSnapValue !== this.state.translationSnapValue) {
+      this._transformControls.translationSnap = this.state.translationSnapValue;
     }
   }
 
@@ -199,6 +210,12 @@ export class MainView extends React.Component<IProps, IStates> {
   addContextMenu = (): void => {
     const commands = new CommandRegistry();
     commands.addCommand('add-annotation', {
+      describedBy: {
+        args: {
+          type: 'object',
+          properties: {}
+        }
+      },
       execute: () => {
         if (!this._pointer3D) {
           return;
@@ -209,7 +226,7 @@ export class MainView extends React.Component<IProps, IStates> {
         );
 
         // If in exploded view, we scale down to the initial position (to before exploding the view)
-        if (this._explodedView.enabled) {
+        if (this.explodedViewEnabled) {
           const explodedState = computeExplodedState({
             mesh: this._pointer3D.mesh,
             boundingGroup: this._boundingGroup,
@@ -249,18 +266,35 @@ export class MainView extends React.Component<IProps, IStates> {
       SPLITVIEW_BACKGROUND_COLOR.set(
         getCSSVariableColor(SPLITVIEW_BACKGROUND_COLOR_CSS)
       );
-      this._camera = new THREE.PerspectiveCamera(
-        50,
-        2,
-        CAMERA_NEAR,
-        CAMERA_FAR
-      );
+      if (this._mainViewModel.viewSettings.cameraSettings) {
+        const cameraSettings = this._mainViewModel.viewSettings
+          .cameraSettings as CameraSettings;
+        if (cameraSettings.type === 'Perspective') {
+          this._camera = new THREE.PerspectiveCamera(
+            50,
+            2,
+            CAMERA_NEAR,
+            CAMERA_FAR
+          );
+        } else if (cameraSettings.type === 'Orthographic') {
+          const width = this._divRef.current?.clientWidth || 0;
+          const height = this._divRef.current?.clientHeight || 0;
+          this._camera = new THREE.OrthographicCamera(
+            width / -2,
+            width / 2,
+            height / 2,
+            height / -2
+          );
+          this._camera.updateProjectionMatrix();
+        }
+      }
       this._camera.position.set(8, 8, 8);
       this._camera.up.set(0, 0, 1);
 
       this._scene = new THREE.Scene();
 
-      this._scene.add(new THREE.AmbientLight(0xffffff, 0.5)); // soft white light
+      this._ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // soft white light
+      this._scene.add(this._ambientLight);
 
       this._cameraLight = new THREE.PointLight(0xffffff, 1);
       this._cameraLight.decay = 0;
@@ -306,13 +340,13 @@ export class MainView extends React.Component<IProps, IStates> {
       this._renderer.domElement.addEventListener('contextmenu', e => {
         e.preventDefault();
         e.stopPropagation();
-        this._contextMenu.open(e);
       });
 
       document.addEventListener('keydown', e => {
         this._onKeyDown(e);
       });
 
+      // Not enabling damping since it makes the syncing between cameraL and camera trickier
       this._controls = new OrbitControls(
         this._camera,
         this._renderer.domElement
@@ -323,11 +357,10 @@ export class MainView extends React.Component<IProps, IStates> {
         this._scene.position.y,
         this._scene.position.z
       );
-      this._controls.enableDamping = true;
-      this._controls.dampingFactor = 0.15;
 
       this._renderer.domElement.addEventListener('mousedown', e => {
         this._mouseDrag.start.set(e.clientX, e.clientY);
+        this._mouseDrag.button = e.button;
       });
 
       this._renderer.domElement.addEventListener('mouseup', e => {
@@ -335,7 +368,11 @@ export class MainView extends React.Component<IProps, IStates> {
         const distance = this._mouseDrag.end.distanceTo(this._mouseDrag.start);
 
         if (distance <= CLICK_THRESHOLD) {
-          this._onClick(e);
+          if (this._mouseDrag.button === 0) {
+            this._onClick(e);
+          } else if (this._mouseDrag.button === 2) {
+            this._contextMenu.open(e);
+          }
         }
       });
 
@@ -522,6 +559,19 @@ export class MainView extends React.Component<IProps, IStates> {
     }
   };
 
+  private _createAxesHelper() {
+    if (this._refLength) {
+      this._sceneAxe?.removeFromParent();
+      const axesHelper = new THREE.AxesHelper(this._refLength * 5);
+      const material = axesHelper.material as THREE.LineBasicMaterial;
+      material.depthTest = false;
+      axesHelper.renderOrder = 1;
+      this._sceneAxe = axesHelper;
+      this._sceneAxe.visible = this._model.jcadSettings.showAxesHelper;
+      this._scene.add(this._sceneAxe);
+    }
+  }
+
   private _createViewHelper() {
     // Remove the existing ViewHelperDiv if it already exists
     if (
@@ -579,14 +629,22 @@ export class MainView extends React.Component<IProps, IStates> {
     this._renderer.setRenderTarget(null);
     this._renderer.clear();
 
-    if (this._sceneL) {
+    if (this._sceneL && this._cameraL) {
+      this._cameraL.matrixWorld.copy(this._camera.matrixWorld);
+      this._cameraL.matrixWorld.decompose(
+        this._cameraL.position,
+        this._cameraL.quaternion,
+        this._cameraL.scale
+      );
+      this._cameraL.updateProjectionMatrix();
+
       this._renderer.setScissor(
         0,
         0,
         this._sliderPos,
         this._divRef.current?.clientHeight || 0
       );
-      this._renderer.render(this._sceneL, this._camera);
+      this._renderer.render(this._sceneL, this._cameraL);
 
       this._renderer.setScissor(
         this._sliderPos,
@@ -594,10 +652,9 @@ export class MainView extends React.Component<IProps, IStates> {
         this._divRef.current?.clientWidth || 0,
         this._divRef.current?.clientHeight || 0
       );
-      this._renderer.render(this._scene, this._camera);
-    } else {
-      this._renderer.render(this._scene, this._camera);
     }
+
+    this._renderer.render(this._scene, this._camera);
 
     this._viewHelper.render(this._renderer);
     this.updateCameraRotation();
@@ -620,6 +677,12 @@ export class MainView extends React.Component<IProps, IStates> {
         this._camera.bottom = this._divRef.current.clientHeight / -2;
       }
       this._camera.updateProjectionMatrix();
+
+      if (this._sceneL && this._cameraL) {
+        this._sceneL.remove(this._cameraL);
+        this._cameraL = this._camera.clone();
+        this._sceneL.add(this._cameraL);
+      }
     }
   };
 
@@ -669,6 +732,16 @@ export class MainView extends React.Component<IProps, IStates> {
     });
   }
 
+  private _handleSettingsChange(_: IJupyterCadModel, changedKey: string): void {
+    if (changedKey === 'showAxesHelper' && this._sceneAxe) {
+      this._sceneAxe.visible = this._model.jcadSettings.showAxesHelper;
+    }
+
+    if (changedKey === 'cameraType') {
+      this._updateCamera();
+    }
+  }
+
   private _onPointerMove(e: MouseEvent) {
     const rect = this._renderer.domElement.getBoundingClientRect();
 
@@ -697,7 +770,7 @@ export class MainView extends React.Component<IProps, IStates> {
       this._pointer3D.parent = picked.mesh;
 
       // If in exploded view, we scale down to the initial position (to before exploding the view)
-      if (this._explodedView.enabled) {
+      if (this.explodedViewEnabled) {
         const explodedState = computeExplodedState({
           mesh: this._pointer3D.parent,
           boundingGroup: this._boundingGroup,
@@ -1009,6 +1082,8 @@ export class MainView extends React.Component<IProps, IStates> {
         this._refLength * 10,
         this._refLength * 10
       );
+
+      this._createAxesHelper();
     } else {
       this._refLength = null;
     }
@@ -1291,12 +1366,39 @@ export class MainView extends React.Component<IProps, IStates> {
   private _updateTransformControls(selection: string[]) {
     if (selection.length === 1 && !this._explodedView.enabled) {
       const selectedMeshName = selection[0];
-      const matchingChild = this._meshGroup?.children.find(child =>
+
+      if (selectedMeshName.startsWith('edge')) {
+        const selectedMesh = this._meshGroup?.getObjectByName(
+          selectedMeshName
+        ) as BasicMesh;
+
+        if (selectedMesh.parent?.name) {
+          const parentName = selectedMesh.parent.name;
+
+          // Not using getObjectByName, we want the full group
+          // TODO Improve this detection of the full group. startsWith looks brittle
+          const parent = this._meshGroup?.children.find(child =>
+            child.name.startsWith(parentName)
+          );
+
+          if (parent) {
+            this._transformControls.attach(parent as BasicMesh);
+
+            this._transformControls.visible = this.state.transform;
+            this._transformControls.enabled = this.state.transform;
+          }
+        }
+        return;
+      }
+
+      // Not using getObjectByName, we want the full group
+      // TODO Improve this detection of the full group. startsWith looks brittle
+      const selectedMesh = this._meshGroup?.children.find(child =>
         child.name.startsWith(selectedMeshName)
       );
 
-      if (matchingChild) {
-        this._transformControls.attach(matchingChild as BasicMesh);
+      if (selectedMesh) {
+        this._transformControls.attach(selectedMesh as BasicMesh);
 
         this._transformControls.visible = this.state.transform;
         this._transformControls.enabled = this.state.transform;
@@ -1423,7 +1525,7 @@ export class MainView extends React.Component<IProps, IStates> {
         collaboratorPointer.mesh.visible = true;
 
         // If we are in exploded view, we display the collaborator cursor at the exploded position
-        if (this._explodedView.enabled) {
+        if (this.explodedViewEnabled) {
           const explodedState = computeExplodedState({
             mesh: parent,
             boundingGroup: this._boundingGroup,
@@ -1465,8 +1567,7 @@ export class MainView extends React.Component<IProps, IStates> {
       for (const objData of objects) {
         const objName = objData.name;
         const obj = this._meshGroup?.getObjectByName(objName) as
-          | BasicMesh
-          | undefined;
+          BasicMesh | undefined;
 
         if (!obj) {
           continue;
@@ -1502,33 +1603,21 @@ export class MainView extends React.Component<IProps, IStates> {
     sender: ObservableMap<JSONValue>,
     change: IObservableMap.IChangedArgs<JSONValue>
   ): void {
-    if (change.key === 'axes') {
-      this._sceneAxe?.removeFromParent();
-      const axe = change.newValue as AxeHelper | undefined;
-
-      if (change.type !== 'remove' && axe && axe.visible) {
-        this._sceneAxe = new THREE.AxesHelper(axe.size);
-        this._scene.add(this._sceneAxe);
-      }
-    }
-
     if (change.key === 'explodedView') {
-      const explodedView = change.newValue as ExplodedView | undefined;
+      const explodedView = change.newValue as ExplodedView;
 
       if (change.type !== 'remove' && explodedView) {
-        this._explodedView = explodedView;
-
-        this._setupExplodedView();
-      }
-    }
-
-    if (change.key === 'cameraSettings') {
-      const cameraSettings = change.newValue as CameraSettings | undefined;
-
-      if (change.type !== 'remove' && cameraSettings) {
-        this._cameraSettings = cameraSettings;
-
-        this._updateCamera();
+        this.setState(
+          oldState => ({
+            ...oldState,
+            explodedViewEnabled: explodedView.enabled,
+            explodedViewFactor: explodedView.factor
+          }),
+          () => {
+            this._explodedView = explodedView;
+            this._setupExplodedView();
+          }
+        );
       }
     }
 
@@ -1586,8 +1675,12 @@ export class MainView extends React.Component<IProps, IStates> {
     }
   }
 
+  get explodedViewEnabled(): boolean {
+    return this._explodedView.enabled && this._explodedView.factor !== 0;
+  }
+
   private _setupExplodedView() {
-    if (this._explodedView.enabled) {
+    if (this.explodedViewEnabled) {
       const center = new THREE.Vector3();
       this._boundingGroup.getCenter(center);
 
@@ -1660,7 +1753,7 @@ export class MainView extends React.Component<IProps, IStates> {
     this._camera.remove(this._cameraLight);
     this._scene.remove(this._camera);
 
-    if (this._cameraSettings.type === 'Perspective') {
+    if (this._model.jcadSettings.cameraType === 'Perspective') {
       this._camera = new THREE.PerspectiveCamera(
         50,
         2,
@@ -1693,11 +1786,16 @@ export class MainView extends React.Component<IProps, IStates> {
     this._camera.position.copy(position);
     this._camera.up.copy(up);
 
+    if (this._sceneL && this._cameraL) {
+      this._sceneL.remove(this._cameraL);
+      this._cameraL = this._camera.clone();
+      this._sceneL.add(this._cameraL);
+    }
+
     this._transformControls.camera = this._camera;
     this._clipPlaneTransformControls.camera = this._camera;
 
-    const resizeEvent = new Event('resize');
-    window.dispatchEvent(resizeEvent);
+    this.resizeCanvasToDisplaySize();
   }
 
   private _updateSplit(enabled: boolean) {
@@ -1710,16 +1808,16 @@ export class MainView extends React.Component<IProps, IStates> {
       this._sliderPos = (this._divRef.current?.clientWidth ?? 0) / 2;
       this._sceneL = new THREE.Scene();
       this._sceneL.background = SPLITVIEW_BACKGROUND_COLOR;
-      this._sceneL.add(new THREE.AmbientLight(0xffffff, 0.5)); // soft white light
-      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
-      this._sceneL.add(light);
-      this._sceneL.add(this._camera);
-      this._sceneL.add(this._meshGroup.clone(true));
+      this._sceneL.add(this._ambientLight.clone()); // soft white light
+      this._cameraL = this._camera.clone();
+      this._sceneL.add(this._cameraL);
+      this._sceneL.add(this._meshGroup.clone());
       this.initSlider(true);
     } else {
       this._renderer.setScissorTest(false);
       this._sceneL?.clear();
       this._sceneL = undefined;
+      this._cameraL = undefined;
       this.initSlider(false);
     }
   }
@@ -1839,7 +1937,7 @@ export class MainView extends React.Component<IProps, IStates> {
     );
 
     // If in exploded view, we explode the annotation position as well
-    if (this._explodedView.enabled && parent) {
+    if (this.explodedViewEnabled && parent) {
       const explodedState = computeExplodedState({
         mesh: parent,
         boundingGroup: this._boundingGroup,
@@ -1861,16 +1959,31 @@ export class MainView extends React.Component<IProps, IStates> {
     return screenPosition;
   }
 
-  private _handleSnapChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value);
-    if (!isNaN(value) && value > 0) {
-      this.setState({ rotationSnapValue: value });
-    }
+  private _handleSnapChange =
+    (key: 'rotationSnapValue' | 'translationSnapValue') =>
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = parseFloat(event.target.value);
+      if (!isNaN(value)) {
+        // enforce > 0 for rotation
+        if (key === 'rotationSnapValue' && value <= 0) {
+          return;
+        }
+        this.setState({ [key]: value } as Pick<this['state'], typeof key>);
+      }
+    };
+
+  private _handleExplodedViewChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const newValue = parseFloat(event.target.value);
+    this.setState({ explodedViewFactor: newValue });
+    this._explodedView.factor = newValue;
+    this._setupExplodedView();
   };
 
   render(): JSX.Element {
     const isTransformOrClipEnabled =
-      this.state.transform || this._clipSettings.enabled;
+      this.state.transform || this.state.clipEnabled;
     return (
       <div
         className="jcad-Mainview data-jcad-keybinding"
@@ -1916,40 +2029,126 @@ export class MainView extends React.Component<IProps, IStates> {
             height: 'calc(100%)'
           }}
         />
-        {isTransformOrClipEnabled && (
+
+        {(isTransformOrClipEnabled || this.state.explodedViewEnabled) && (
           <div
             style={{
               position: 'absolute',
               bottom: '10px',
               left: '10px',
+              display: 'flex',
+              flexDirection: 'column',
               padding: '8px',
               backgroundColor: 'rgba(0, 0, 0, 0.5)',
               color: 'white',
               borderRadius: '4px',
-              fontSize: '12px'
+              fontSize: '12px',
+              gap: '8px'
             }}
           >
-            <div style={{ marginBottom: '2px' }}>Press R to switch mode</div>
-
-            {this.state.transformMode === 'rotate' && (
+            {isTransformOrClipEnabled && (
               <div>
-                <label style={{ marginRight: '8px' }}>Rotation Snap (°):</label>
-                <input
-                  type="number"
-                  value={this.state.rotationSnapValue}
-                  onChange={this._handleSnapChange}
-                  style={{
-                    width: '50px',
-                    padding: '4px',
-                    borderRadius: '4px',
-                    border: '1px solid #ccc',
-                    fontSize: '12px'
-                  }}
-                />
+                <div style={{ marginBottom: '2px' }}>
+                  {this.state.transformMode === 'rotate'
+                    ? 'Press R to switch to translation mode'
+                    : 'Press R to switch to rotation mode'}
+                </div>
+                {this.state.transformMode === 'translate' &&
+                  this._refLength && (
+                    <div>
+                      <label style={{ marginRight: '8px' }}>
+                        Translation Snap:
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type="range"
+                          min="0"
+                          max={this._refLength * 10}
+                          step={this._refLength / 100}
+                          value={this.state.translationSnapValue}
+                          onChange={this._handleSnapChange(
+                            'translationSnapValue'
+                          )}
+                          style={{ width: '120px', marginRight: '8px' }}
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          max={this._refLength * 10}
+                          step={this._refLength / 100}
+                          value={this.state.translationSnapValue}
+                          onChange={this._handleSnapChange(
+                            'translationSnapValue'
+                          )}
+                          style={{
+                            width: '50px',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            border: '1px solid #ccc',
+                            fontSize: '12px'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                {this.state.transformMode === 'rotate' && (
+                  <div>
+                    <label style={{ marginRight: '8px' }}>
+                      Rotation Snap (°):
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="range"
+                        min="0"
+                        max="180"
+                        step="1"
+                        value={this.state.rotationSnapValue}
+                        onChange={this._handleSnapChange('rotationSnapValue')}
+                        style={{ width: '120px', marginRight: '8px' }}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="180"
+                        step="1"
+                        value={this.state.rotationSnapValue}
+                        onChange={this._handleSnapChange('rotationSnapValue')}
+                        style={{
+                          width: '50px',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          border: '1px solid #ccc',
+                          fontSize: '12px'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {this.state.explodedViewEnabled && (
+              <div>
+                <div style={{ marginBottom: '4px' }}>Exploded view factor:</div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5"
+                    step="0.1"
+                    value={this.state.explodedViewFactor}
+                    onChange={this._handleExplodedViewChange}
+                    style={{ width: '120px', marginRight: '8px' }}
+                  />
+                  <span style={{ minWidth: '30px', textAlign: 'right' }}>
+                    {this.state.explodedViewFactor}
+                  </span>
+                </div>
               </div>
             )}
           </div>
         )}
+
         <div
           id={'split-label-left'}
           style={{
@@ -1995,7 +2194,6 @@ export class MainView extends React.Component<IProps, IStates> {
   // TODO Make this a shared property
   private _explodedView: ExplodedView = { enabled: false, factor: 0 };
   private _explodedViewLinesHelperGroup: THREE.Group | null = null; // The list of line helpers for the exploded view
-  private _cameraSettings: CameraSettings = { type: 'Perspective' };
   private _clipSettings: ClipSettings = { enabled: false, showClipPlane: true };
   private _clippingPlaneMeshControl: BasicMesh; // Plane mesh using for controlling the clip plane in the UI
   private _clippingPlaneMesh: THREE.Mesh | null = null; // Plane mesh used for "filling the gaps"
@@ -2006,6 +2204,7 @@ export class MainView extends React.Component<IProps, IStates> {
   private _currentSelection: { [key: string]: ISelection } | null = null;
 
   private _scene: THREE.Scene; // Threejs scene
+  private _ambientLight: THREE.AmbientLight;
   private _camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; // Threejs camera
   private _cameraLight: THREE.PointLight;
   private _raycaster = new THREE.Raycaster();
@@ -2032,5 +2231,7 @@ export class MainView extends React.Component<IProps, IStates> {
   private _sliderPos = 0;
   private _slideInit = false;
   private _sceneL: THREE.Scene | undefined = undefined;
+  private _cameraL:
+    THREE.PerspectiveCamera | THREE.OrthographicCamera | undefined = undefined; // Threejs camera
   private _keyDownHandler: (event: KeyboardEvent) => void;
 }

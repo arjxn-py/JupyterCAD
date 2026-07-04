@@ -2,8 +2,21 @@ import { IJupyterCadDoc, JupyterCadModel } from '@jupytercad/schema';
 import { DocumentRegistry } from '@jupyterlab/docregistry';
 import { Contents } from '@jupyterlab/services';
 import { JupyterCadStlDoc } from './model';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 class JupyterCadStlModel extends JupyterCadModel {
+  constructor(options: {
+    sharedModel?: IJupyterCadDoc;
+    languagePreference?: string;
+    settingRegistry?: ISettingRegistry;
+  }) {
+    super({
+      sharedModel: options.sharedModel,
+      languagePreference: options.languagePreference,
+      settingRegistry: options.settingRegistry
+    });
+  }
+
   fromString(data: string): void {
     (this.sharedModel as JupyterCadStlDoc).source = data;
     this.dirty = true;
@@ -17,12 +30,11 @@ class JupyterCadStlModel extends JupyterCadModel {
 /**
  * A Model factory to create new instances of JupyterCadSTLModel.
  */
-export class JupyterCadStlModelFactory
-  implements DocumentRegistry.IModelFactory<JupyterCadStlModel>
-{
-  /**
-   * Whether the model is collaborative or not.
-   */
+export class JupyterCadStlModelFactory implements DocumentRegistry.IModelFactory<JupyterCadStlModel> {
+  constructor(options: { settingRegistry?: ISettingRegistry }) {
+    this._settingRegistry = options.settingRegistry;
+  }
+
   readonly collaborative = true;
 
   /**
@@ -88,10 +100,14 @@ export class JupyterCadStlModelFactory
   ): JupyterCadStlModel {
     const model = new JupyterCadStlModel({
       sharedModel: options.sharedModel,
-      languagePreference: options.languagePreference
+      languagePreference: options.languagePreference,
+      settingRegistry: this._settingRegistry
     });
+    // Optionally call initSettings() if desired:
+    model.initSettings();
     return model;
   }
 
   private _disposed = false;
+  private _settingRegistry: ISettingRegistry | undefined;
 }

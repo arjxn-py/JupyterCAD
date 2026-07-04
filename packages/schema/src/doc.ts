@@ -66,13 +66,13 @@ export class JupyterCadDoc
     return this._optionsChanged;
   }
 
-  getSource(): JSONObject {
+  getSource(): string {
     const objects = this._objects.toJSON();
     const options = this._options.toJSON();
     const metadata = this._metadata.toJSON();
     const outputs = this._outputs.toJSON();
 
-    return { objects, options, metadata, outputs };
+    return JSON.stringify({ objects, options, metadata, outputs }, null, '  ');
   }
 
   setSource(source: JSONObject | string): void {
@@ -340,11 +340,27 @@ export class JupyterCadDoc
   };
 
   private _metaObserver = (event: Y.YMapEvent<string>): void => {
-    this._metadataChanged.emit(event.keys);
+    const changes = new Map();
+    event.changes.keys.forEach((event, key) => {
+      changes.set(key, {
+        action: event.action,
+        oldValue: event.oldValue,
+        newValue: this._metadata.get(key)
+      });
+    });
+    this._metadataChanged.emit(changes);
   };
 
   private _optionsObserver = (event: Y.YMapEvent<Y.Map<string>>): void => {
-    this._optionsChanged.emit(event.keys);
+    const changes = new Map();
+    event.changes.keys.forEach((event, key) => {
+      changes.set(key, {
+        action: event.action,
+        oldValue: event.oldValue,
+        newValue: this._options.get(key)
+      });
+    });
+    this._optionsChanged.emit(changes);
   };
 
   private _objects: Y.Array<Y.Map<any>>;
